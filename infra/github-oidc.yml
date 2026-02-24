@@ -110,6 +110,7 @@ Resources:
                 Action:
                   - lambda:UpdateFunctionCode
                   - lambda:GetFunction
+                  - lambda:GetFunctionConfiguration
                   - lambda:PublishVersion
                   - lambda:ListVersionsByFunction
                   - lambda:GetAlias
