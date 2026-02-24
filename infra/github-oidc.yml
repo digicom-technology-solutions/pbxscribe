@@ -109,6 +109,7 @@ Resources:
                 Effect: Allow
                 Action:
                   - lambda:UpdateFunctionCode
+                  - lambda:UpdateFunctionConfiguration
                   - lambda:GetFunction
                   - lambda:GetFunctionConfiguration
                   - lambda:PublishVersion
