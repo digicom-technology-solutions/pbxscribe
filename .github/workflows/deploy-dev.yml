@@ -1,119 +1,30 @@
 # =============================================================================
-# Blue-Green Lambda Deployment via AWS CodeDeploy
-#
-# BRANCH → ENVIRONMENT MAPPING
-# Configured via DEPLOY_BRANCH variable on each GitHub Environment.
-# Change without touching code:
-#   GitHub → Settings → Environments → <env> → Variables → DEPLOY_BRANCH
-# Or run setup-cicd.sh to set it and keep deploy.yml in sync:
-#   ./setup-cicd.sh dev
-#
-# Current mapping (reflects GitHub Environment variables):
-# ┌──────────────┬─────────────┬───────────────────────────────────────────┐
-# │ DEPLOY_BRANCH│ Environment │ Notes                                     │
-# ├──────────────┼─────────────┼───────────────────────────────────────────┤
-# │ (GitHub var) │ dev         │ Set via Settings → Environments → dev     │
-# │ (GitHub var) │ staging     │ Set via Settings → Environments → staging │
-# │ (GitHub var) │ prod        │ Set via Settings → Environments → prod    │
-# └──────────────┴─────────────┴───────────────────────────────────────────┘
-# Fallback: inline case map in 'Map branch → environment' step (kept in sync
-# by setup-cicd.sh). Active when GitHub Environment variables are not set.
-#
-# ISOLATION GUARANTEE
-# Each environment has its own AWS_DEPLOY_ROLE_ARN secret stored at the
-# GitHub Environment level. The matching IAM role (created by setup-cicd.sh)
-# can only be assumed when the workflow is running inside that named GitHub
-# Environment. A dev role cannot touch prod infrastructure, and vice versa.
+# Deploy to dev (Blue-Green via AWS CodeDeploy)
 #
 # STRATEGY: LambdaCanary10Percent5Minutes
 #   Routes 10% of traffic to the new Lambda version for 5 minutes.
 #   Auto-rolls back if the LambdaErrorAlarm fires (≥3 errors / 60s).
-#
-# PREREQUISITES (run setup-cicd.sh once per environment):
-#   ./setup-cicd.sh dev   — sets up dev
-#   ./setup-cicd.sh prod  — sets up prod
 # =============================================================================
 
-name: Deploy to Lambda (Blue-Green)
+name: Deploy → dev
 
 on:
   push:
-    branches: ['**']  # All branches — unmapped ones exit early in resolve-environment
+    branches:
+      - main
+      - features/cicd
 
 env:
   AWS_REGION: us-east-2
   PROJECT_NAME: pbxscribe-api-backend
   ALIAS_NAME: live
+  ENVIRONMENT: dev
 
 jobs:
-  # ── Resolve which environment this branch deploys to ──────────────────────
-  resolve-environment:
-    name: Resolve Environment
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: read    # required to read GitHub Environment variables via API
-    outputs:
-      environment: ${{ steps.map.outputs.environment }}
-    steps:
-      - name: Map branch → environment
-        id: map
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          BRANCH="${{ github.ref_name }}"
-          ENV=""
-
-          # Fast path: inline map (no API calls).
-          # setup-cicd.sh keeps this in sync with GitHub Environment variables.
-          case "$BRANCH" in
-            # BEGIN_BRANCH_MAP
-            main) ENV="dev" ;;
-            staging) ENV="staging" ;;
-            # END_BRANCH_MAP
-          esac
-
-          # Slow path: GitHub Environment DEPLOY_BRANCH variables.
-          # Only checked when the inline map has no match — allows deploying from
-          # a branch configured in GitHub without re-running setup-cicd.sh.
-          # Configure at: Settings → Environments → <env> → Variables → DEPLOY_BRANCH
-          if [ -z "$ENV" ]; then
-            for candidate in dev staging prod; do
-              CONFIGURED=$(gh api \
-                "repos/${{ github.repository }}/environments/${candidate}/variables/DEPLOY_BRANCH" \
-                --jq '.value' 2>/dev/null || echo "")
-              echo "[$candidate] DEPLOY_BRANCH='$CONFIGURED' vs BRANCH='$BRANCH'"
-              if [ -n "$CONFIGURED" ] && [ "$CONFIGURED" = "$BRANCH" ]; then
-                ENV="$candidate"
-                break
-              fi
-            done
-          fi
-
-          if [ -z "$ENV" ]; then
-            echo "Branch '$BRANCH' is not a deploy branch — skipping."
-            exit 0
-          fi
-
-          echo "environment=$ENV" >> "$GITHUB_OUTPUT"
-          echo "Branch '$BRANCH' → environment '$ENV'"
-
-  # ── Blue-green Lambda deployment ──────────────────────────────────────────
   deploy:
-    name: Deploy → ${{ needs.resolve-environment.outputs.environment }}
-    needs: resolve-environment
-    if: needs.resolve-environment.outputs.environment != ''
+    name: Deploy → dev
     runs-on: ubuntu-latest
-
-    # GitHub Environment — provides environment-scoped AWS_DEPLOY_ROLE_ARN
-    # secret and optional approval gates (configure in repo Settings).
-    # The matching IAM role trust policy is locked to this environment name,
-    # so a dev role cannot be assumed when deploying to prod, and vice versa.
-    environment: ${{ needs.resolve-environment.outputs.environment }}
-
-    env:
-      ENVIRONMENT: ${{ needs.resolve-environment.outputs.environment }}
-
+    environment: dev
     permissions:
       id-token: write  # Required for OIDC
       contents: read
@@ -209,7 +120,6 @@ jobs:
 
             ALIAS_ARN="${FUNCTION_ARN}:${ALIAS_NAME}"
 
-            # Update API Gateway integration to invoke through the alias
             API_ID=$(aws cloudformation describe-stacks \
               --stack-name "$STACK_NAME" \
               --query "Stacks[0].Outputs[?OutputKey=='HttpApiId'].OutputValue" \
@@ -226,7 +136,6 @@ jobs:
               --integration-uri "$ALIAS_ARN" \
               --no-cli-pager > /dev/null
 
-            # Grant API Gateway permission to invoke the alias
             aws lambda add-permission \
               --function-name "${FUNCTION_NAME}:${ALIAS_NAME}" \
               --statement-id "AllowAPIGatewayInvoke-${ALIAS_NAME}" \
@@ -249,10 +158,9 @@ jobs:
               exit 0
             fi
 
-            echo "=== Blue-green deploy ($ENVIRONMENT): $CURRENT_VERSION → $NEW_VERSION ==="
+            echo "=== Blue-green deploy (dev): $CURRENT_VERSION → $NEW_VERSION ==="
             echo "Traffic: 10% to new version for 5 min, then 100% if no alarms"
 
-            # Build AppSpec JSON for CodeDeploy
             APPSPEC=$(jq -n \
               --arg name    "$FUNCTION_NAME" \
               --arg alias   "$ALIAS_NAME" \
@@ -273,7 +181,6 @@ jobs:
                 }]
               }')
 
-            # Wrap AppSpec in the CodeDeploy revision envelope
             REVISION=$(echo "$APPSPEC" | jq '{
               "revisionType": "AppSpecContent",
               "appSpecContent": { "content": (. | tojson) }
@@ -309,7 +216,7 @@ jobs:
             --query 'FunctionVersion' \
             --output text \
             --no-cli-pager 2>/dev/null || echo "N/A")
-          echo "[$ENVIRONMENT] Alias '$ALIAS_NAME' is now serving version $FINAL_VERSION"
+          echo "[dev] Alias '$ALIAS_NAME' is now serving version $FINAL_VERSION"
 
       - name: Report CodeDeploy failure details
         if: failure()
