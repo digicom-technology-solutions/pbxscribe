@@ -51,7 +51,8 @@ jobs:
     name: Resolve Environment
     runs-on: ubuntu-latest
     permissions:
-      contents: read   # default token — needed to call GitHub API below
+      contents: read
+      actions: read    # required to read GitHub Environment variables via API
     outputs:
       environment: ${{ steps.map.outputs.environment }}
     steps:
