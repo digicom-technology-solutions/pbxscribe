@@ -136,8 +136,8 @@ Resources:
                 Effect: Allow
                 Action:
                   - cloudformation:DescribeStacks
-                  - apigatewayv2:GetIntegrations
-                  - apigatewayv2:UpdateIntegration
+                  - apigateway:GET
+                  - apigateway:PATCH
                   - sts:GetCallerIdentity
                 Resource: '*'
 
