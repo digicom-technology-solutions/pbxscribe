@@ -8,6 +8,7 @@ const migrateRoutes = require('./routes/migrate');
 const userRoutes = require('./routes/users');
 const authRoutes = require('./routes/auth');
 const apiKeyRoutes = require('./routes/apiKeys');
+const cicdRoutes = require('./routes/cicd');
 
 /**
  * Initialize and configure Fastify application
@@ -61,18 +62,7 @@ async function init() {
         await fastify.register(userRoutes);
         await fastify.register(authRoutes);
         await fastify.register(apiKeyRoutes);
-
-        // TODO: Remove this route once CI/CD is confirmed working
-        fastify.get('/cicd-test-e5ba9634', async (request, reply) => {
-            return {
-                status: 'ok',
-                message: 'CI/CD deployment verified — remove this route when done',
-                environment: process.env.NODE_ENV || 'development',
-                lambdaFunction: process.env.AWS_LAMBDA_FUNCTION_NAME || 'local',
-                lambdaVersion: process.env.AWS_LAMBDA_FUNCTION_VERSION || 'local',
-                deployedAt: new Date().toISOString(),
-            };
-        });
+        await fastify.register(cicdRoutes);
 
         // Root route
         fastify.get('/', {

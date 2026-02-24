@@ -80,6 +80,25 @@ jobs:
         run: |
           FUNCTION_NAME="${PROJECT_NAME}-${ENVIRONMENT}-api"
 
+          echo "Injecting commit metadata into Lambda env..."
+          CURRENT_ENV=$(aws lambda get-function-configuration \
+            --function-name "$FUNCTION_NAME" \
+            --query 'Environment.Variables' \
+            --output json --no-cli-pager)
+
+          MERGED_ENV=$(echo "$CURRENT_ENV" | jq \
+            --arg sha "${{ github.sha }}" \
+            --arg msg "${{ github.event.head_commit.message }}" \
+            '. + {COMMIT_SHA: $sha, COMMIT_MESSAGE: $msg}')
+
+          aws lambda update-function-configuration \
+            --function-name "$FUNCTION_NAME" \
+            --environment "Variables=$(echo "$MERGED_ENV" | jq -c .)" \
+            --no-cli-pager > /dev/null
+
+          aws lambda wait function-updated \
+            --function-name "$FUNCTION_NAME"
+
           echo "Uploading code to Lambda..."
           aws lambda update-function-code \
             --function-name "$FUNCTION_NAME" \
