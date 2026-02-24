@@ -8,6 +8,7 @@ const migrateRoutes = require('./routes/migrate');
 const userRoutes = require('./routes/users');
 const authRoutes = require('./routes/auth');
 const apiKeyRoutes = require('./routes/apiKeys');
+const cicdRoutes = require('./routes/cicd');
 
 /**
  * Initialize and configure Fastify application
@@ -61,6 +62,7 @@ async function init() {
         await fastify.register(userRoutes);
         await fastify.register(authRoutes);
         await fastify.register(apiKeyRoutes);
+        await fastify.register(cicdRoutes);
 
         // Root route
         fastify.get('/', {

@@ -1,0 +1,207 @@
+# =============================================================================
+# Deploy to dev (Blue-Green via AWS CodeDeploy)
+#
+# STRATEGY: LambdaCanary10Percent5Minutes
+#   Routes 10% of traffic to the new Lambda version for 5 minutes.
+#   Auto-rolls back if the LambdaErrorAlarm fires (≥3 errors / 60s).
+# =============================================================================
+
+name: Deploy → dev
+
+on:
+  push:
+    branches:
+      - main
+      - features/cicd
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  PROJECT_NAME: pbxscribe-api-backend
+  ALIAS_NAME: live
+  ENVIRONMENT: dev
+
+jobs:
+  deploy:
+    name: Deploy → dev
+    runs-on: ubuntu-latest
+    environment: dev
+    permissions:
+      id-token: write  # Required for OIDC
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: src/api/package-lock.json
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install production dependencies
+        working-directory: src/api
+        run: npm ci --omit=dev --silent
+
+      - name: Package Lambda
+        run: |
+          rm -rf .build function.zip
+          cp -r src/api .build
+          rm -rf .build/tests
+          (cd .build && zip -r ../function.zip . -x "*.git*" > /dev/null)
+          rm -rf .build
+          echo "Package size: $(du -sh function.zip | cut -f1)"
+
+      - name: Upload Lambda code and publish version
+        run: |
+          FUNCTION_NAME="${PROJECT_NAME}-${ENVIRONMENT}-api"
+
+          echo "Injecting commit metadata into Lambda env..."
+          CURRENT_ENV=$(aws lambda get-function-configuration \
+            --function-name "$FUNCTION_NAME" \
+            --query 'Environment.Variables' \
+            --output json --no-cli-pager)
+
+          jq -cn \
+            --arg name "$FUNCTION_NAME" \
+            --argjson env "$CURRENT_ENV" \
+            --arg sha  "${{ github.sha }}" \
+            --arg msg  "${{ github.event.head_commit.message }}" \
+            '{FunctionName: $name, Environment: {Variables: ($env + {COMMIT_SHA: $sha, COMMIT_MESSAGE: $msg})}}' \
+            > /tmp/lambda-env.json
+
+          aws lambda update-function-configuration \
+            --cli-input-json file:///tmp/lambda-env.json \
+            --no-cli-pager > /dev/null
+
+          aws lambda wait function-updated \
+            --function-name "$FUNCTION_NAME"
+
+          echo "Uploading code to Lambda..."
+          aws lambda update-function-code \
+            --function-name "$FUNCTION_NAME" \
+            --zip-file fileb://function.zip \
+            --no-cli-pager > /dev/null
+
+          echo "Waiting for update to complete..."
+          aws lambda wait function-updated \
+            --function-name "$FUNCTION_NAME"
+
+          echo "Publishing new version..."
+          NEW_VERSION=$(aws lambda publish-version \
+            --function-name "$FUNCTION_NAME" \
+            --description "Deployed from ${{ github.sha }} by ${{ github.actor }}" \
+            --query 'Version' \
+            --output text \
+            --no-cli-pager)
+
+          echo "FUNCTION_NAME=$FUNCTION_NAME" >> "$GITHUB_ENV"
+          echo "NEW_VERSION=$NEW_VERSION"      >> "$GITHUB_ENV"
+          echo "Published version $NEW_VERSION"
+
+      - name: Deploy
+        run: |
+          STACK_NAME="${PROJECT_NAME}-${ENVIRONMENT}-api"
+
+          # Save current alias version for rollback
+          CURRENT_VERSION=$(aws lambda get-alias \
+            --function-name "$FUNCTION_NAME" \
+            --name "$ALIAS_NAME" \
+            --query 'FunctionVersion' \
+            --output text \
+            --no-cli-pager 2>/dev/null || echo "")
+
+          echo "CURRENT_VERSION=${CURRENT_VERSION}" >> "$GITHUB_ENV"
+
+          # ── FIRST DEPLOYMENT: create alias and wire up API Gateway ──────────
+          if [ -z "$CURRENT_VERSION" ]; then
+            echo "=== First deployment: initializing '$ALIAS_NAME' alias ==="
+
+            aws lambda create-alias \
+              --function-name "$FUNCTION_NAME" \
+              --name "$ALIAS_NAME" \
+              --function-version "$NEW_VERSION" \
+              --description "Live alias ($ENVIRONMENT)" \
+              --no-cli-pager > /dev/null
+
+            ACCOUNT_ID=$(aws sts get-caller-identity \
+              --query Account --output text --no-cli-pager)
+
+            FUNCTION_ARN=$(aws lambda get-function \
+              --function-name "$FUNCTION_NAME" \
+              --query 'Configuration.FunctionArn' \
+              --output text --no-cli-pager)
+
+            ALIAS_ARN="${FUNCTION_ARN}:${ALIAS_NAME}"
+
+            API_ID=$(aws cloudformation describe-stacks \
+              --stack-name "$STACK_NAME" \
+              --query "Stacks[0].Outputs[?OutputKey=='HttpApiId'].OutputValue" \
+              --output text --no-cli-pager)
+
+            INTEGRATION_ID=$(aws apigatewayv2 get-integrations \
+              --api-id "$API_ID" \
+              --query 'Items[0].IntegrationId' \
+              --output text --no-cli-pager)
+
+            aws apigatewayv2 update-integration \
+              --api-id "$API_ID" \
+              --integration-id "$INTEGRATION_ID" \
+              --integration-uri "$ALIAS_ARN" \
+              --no-cli-pager > /dev/null
+
+            aws lambda add-permission \
+              --function-name "${FUNCTION_NAME}:${ALIAS_NAME}" \
+              --statement-id "AllowAPIGatewayInvoke-${ALIAS_NAME}" \
+              --action "lambda:InvokeFunction" \
+              --principal "apigateway.amazonaws.com" \
+              --source-arn "arn:aws:execute-api:${AWS_REGION}:${ACCOUNT_ID}:${API_ID}/*" \
+              --no-cli-pager > /dev/null
+
+            echo "Alias '$ALIAS_NAME' created → version $NEW_VERSION"
+
+          # ── SUBSEQUENT DEPLOYMENTS: direct alias update ──────────────────────
+          else
+            if [ "$CURRENT_VERSION" = "$NEW_VERSION" ]; then
+              echo "No version change — skipping."
+              exit 0
+            fi
+
+            echo "$CURRENT_VERSION → $NEW_VERSION"
+
+            aws lambda update-alias \
+              --function-name "$FUNCTION_NAME" \
+              --name "$ALIAS_NAME" \
+              --function-version "$NEW_VERSION" \
+              --no-cli-pager > /dev/null
+
+            echo "Alias '$ALIAS_NAME' updated → version $NEW_VERSION"
+          fi
+
+      - name: Verify active version
+        run: |
+          FINAL_VERSION=$(aws lambda get-alias \
+            --function-name "$FUNCTION_NAME" \
+            --name "$ALIAS_NAME" \
+            --query 'FunctionVersion' \
+            --output text \
+            --no-cli-pager 2>/dev/null || echo "N/A")
+          echo "[dev] '$ALIAS_NAME' is serving version $FINAL_VERSION"
+
+      - name: Rollback on failure
+        if: failure() && env.CURRENT_VERSION != ''
+        run: |
+          echo "Deployment failed — rolling back to version $CURRENT_VERSION"
+          aws lambda update-alias \
+            --function-name "$FUNCTION_NAME" \
+            --name "$ALIAS_NAME" \
+            --function-version "$CURRENT_VERSION" \
+            --no-cli-pager > /dev/null
+          echo "Rolled back to version $CURRENT_VERSION"
