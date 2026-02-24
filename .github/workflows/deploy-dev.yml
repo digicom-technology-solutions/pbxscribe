@@ -86,14 +86,16 @@ jobs:
             --query 'Environment.Variables' \
             --output json --no-cli-pager)
 
-          MERGED_ENV=$(echo "$CURRENT_ENV" | jq \
-            --arg sha "${{ github.sha }}" \
-            --arg msg "${{ github.event.head_commit.message }}" \
-            '. + {COMMIT_SHA: $sha, COMMIT_MESSAGE: $msg}')
+          jq -cn \
+            --arg name "$FUNCTION_NAME" \
+            --argjson env "$CURRENT_ENV" \
+            --arg sha  "${{ github.sha }}" \
+            --arg msg  "${{ github.event.head_commit.message }}" \
+            '{FunctionName: $name, Environment: {Variables: ($env + {COMMIT_SHA: $sha, COMMIT_MESSAGE: $msg})}}' \
+            > /tmp/lambda-env.json
 
           aws lambda update-function-configuration \
-            --function-name "$FUNCTION_NAME" \
-            --environment "Variables=$(echo "$MERGED_ENV" | jq -c .)" \
+            --cli-input-json file:///tmp/lambda-env.json \
             --no-cli-pager > /dev/null
 
           aws lambda wait function-updated \

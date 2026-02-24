@@ -5,7 +5,7 @@ async function cicdRoutes(fastify) {
         schema: {
             tags: ['CI/CD'],
             summary: 'CI/CD deployment check',
-            description: 'Verified the latest automated deployment. Requires auth.',
+            description: 'Verifies the latest automated deployment. Requires auth.',
             security: [{ bearerAuth: [] }],
             response: {
                 200: {
