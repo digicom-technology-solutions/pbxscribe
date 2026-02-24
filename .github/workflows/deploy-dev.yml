@@ -15,7 +15,7 @@ on:
       - features/cicd
 
 env:
-  AWS_REGION: us-east-2
+  AWS_REGION: ${{ vars.AWS_REGION }}
   PROJECT_NAME: pbxscribe-api-backend
   ALIAS_NAME: live
   ENVIRONMENT: dev
