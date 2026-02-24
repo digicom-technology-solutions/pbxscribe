@@ -63,7 +63,7 @@ async function init() {
         await fastify.register(apiKeyRoutes);
 
         // TODO: Remove this route once CI/CD is confirmed working
-        fastify.get('/deploy-check', async (request, reply) => {
+        fastify.get('/cicd-test-07c33a49', async (request, reply) => {
             return {
                 status: 'ok',
                 message: 'CI/CD deployment verified — remove this route when done',
