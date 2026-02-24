@@ -102,13 +102,11 @@ jobs:
           echo "NEW_VERSION=$NEW_VERSION"      >> "$GITHUB_ENV"
           echo "Published version $NEW_VERSION"
 
-      - name: Blue-Green Deploy
+      - name: Deploy
         run: |
-          CODEDEPLOY_APP="${PROJECT_NAME}-${ENVIRONMENT}-api"
-          CODEDEPLOY_GROUP="${PROJECT_NAME}-${ENVIRONMENT}-api-dg"
           STACK_NAME="${PROJECT_NAME}-${ENVIRONMENT}-api"
 
-          # ── Check whether the 'live' alias already exists ──────────────────
+          # Save current alias version for rollback
           CURRENT_VERSION=$(aws lambda get-alias \
             --function-name "$FUNCTION_NAME" \
             --name "$ALIAS_NAME" \
@@ -116,7 +114,9 @@ jobs:
             --output text \
             --no-cli-pager 2>/dev/null || echo "")
 
-          # ── FIRST DEPLOYMENT: bootstrap the alias ──────────────────────────
+          echo "CURRENT_VERSION=${CURRENT_VERSION}" >> "$GITHUB_ENV"
+
+          # ── FIRST DEPLOYMENT: create alias and wire up API Gateway ──────────
           if [ -z "$CURRENT_VERSION" ]; then
             echo "=== First deployment: initializing '$ALIAS_NAME' alias ==="
 
@@ -124,7 +124,7 @@ jobs:
               --function-name "$FUNCTION_NAME" \
               --name "$ALIAS_NAME" \
               --function-version "$NEW_VERSION" \
-              --description "Live alias (blue-green, $ENVIRONMENT)" \
+              --description "Live alias ($ENVIRONMENT)" \
               --no-cli-pager > /dev/null
 
             ACCOUNT_ID=$(aws sts get-caller-identity \
@@ -162,68 +162,24 @@ jobs:
               --no-cli-pager > /dev/null
 
             echo "Alias '$ALIAS_NAME' created → version $NEW_VERSION"
-            echo "API Gateway now routes traffic through the '$ALIAS_NAME' alias"
-            echo "DEPLOYMENT_ID=initial" >> "$GITHUB_ENV"
 
-          # ── SUBSEQUENT DEPLOYMENTS: CodeDeploy canary traffic shift ────────
+          # ── SUBSEQUENT DEPLOYMENTS: direct alias update ──────────────────────
           else
-            echo "Current alias version: $CURRENT_VERSION → New version: $NEW_VERSION"
-
             if [ "$CURRENT_VERSION" = "$NEW_VERSION" ]; then
-              echo "No version change detected — skipping deployment"
-              echo "DEPLOYMENT_ID=skipped" >> "$GITHUB_ENV"
+              echo "No version change — skipping."
               exit 0
             fi
 
-            echo "=== Blue-green deploy (dev): $CURRENT_VERSION → $NEW_VERSION ==="
-            echo "Traffic: 10% to new version for 5 min, then 100% if no alarms"
+            echo "$CURRENT_VERSION → $NEW_VERSION"
 
-            APPSPEC=$(jq -n \
-              --arg name    "$FUNCTION_NAME" \
-              --arg alias   "$ALIAS_NAME" \
-              --arg current "$CURRENT_VERSION" \
-              --arg target  "$NEW_VERSION" \
-              '{
-                "version": 0.0,
-                "Resources": [{
-                  "ApiLambdaFunction": {
-                    "Type": "AWS::Lambda::Function",
-                    "Properties": {
-                      "Name":           $name,
-                      "Alias":          $alias,
-                      "CurrentVersion": $current,
-                      "TargetVersion":  $target
-                    }
-                  }
-                }]
-              }')
+            aws lambda update-alias \
+              --function-name "$FUNCTION_NAME" \
+              --name "$ALIAS_NAME" \
+              --function-version "$NEW_VERSION" \
+              --no-cli-pager > /dev/null
 
-            REVISION=$(echo "$APPSPEC" | jq '{
-              "revisionType": "AppSpecContent",
-              "appSpecContent": { "content": (. | tojson) }
-            }')
-
-            DEPLOYMENT_ID=$(aws deploy create-deployment \
-              --application-name "$CODEDEPLOY_APP" \
-              --deployment-group-name "$CODEDEPLOY_GROUP" \
-              --revision "$REVISION" \
-              --description "Commit ${{ github.sha }} by ${{ github.actor }}" \
-              --query 'deploymentId' \
-              --output text \
-              --no-cli-pager)
-
-            echo "DEPLOYMENT_ID=$DEPLOYMENT_ID" >> "$GITHUB_ENV"
-            echo "CodeDeploy deployment: $DEPLOYMENT_ID"
+            echo "Alias '$ALIAS_NAME' updated → version $NEW_VERSION"
           fi
-
-      - name: Wait for CodeDeploy to complete
-        if: ${{ !contains(env.DEPLOYMENT_ID, 'initial') && !contains(env.DEPLOYMENT_ID, 'skipped') }}
-        run: |
-          echo "Waiting for $DEPLOYMENT_ID..."
-          aws deploy wait deployment-successful \
-            --deployment-id "$DEPLOYMENT_ID" \
-            --no-cli-pager
-          echo "Deployment successful!"
 
       - name: Verify active version
         run: |
@@ -233,18 +189,15 @@ jobs:
             --query 'FunctionVersion' \
             --output text \
             --no-cli-pager 2>/dev/null || echo "N/A")
-          echo "[dev] Alias '$ALIAS_NAME' is now serving version $FINAL_VERSION"
+          echo "[dev] '$ALIAS_NAME' is serving version $FINAL_VERSION"
 
-      - name: Report CodeDeploy failure details
-        if: failure()
+      - name: Rollback on failure
+        if: failure() && env.CURRENT_VERSION != ''
         run: |
-          if [[ "${DEPLOYMENT_ID:-}" == d-* ]]; then
-            echo "CodeDeploy deployment status:"
-            aws deploy get-deployment \
-              --deployment-id "$DEPLOYMENT_ID" \
-              --query 'deploymentInfo.{Status:status,ErrorInfo:errorInformation}' \
-              --output json \
-              --no-cli-pager || true
-            echo ""
-            echo "CodeDeploy may have auto-rolled back to version $CURRENT_VERSION."
-          fi
+          echo "Deployment failed — rolling back to version $CURRENT_VERSION"
+          aws lambda update-alias \
+            --function-name "$FUNCTION_NAME" \
+            --name "$ALIAS_NAME" \
+            --function-version "$CURRENT_VERSION" \
+            --no-cli-pager > /dev/null
+          echo "Rolled back to version $CURRENT_VERSION"
