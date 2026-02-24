@@ -82,6 +82,7 @@ jobs:
               CONFIGURED=$(gh api \
                 "repos/${{ github.repository }}/environments/${candidate}/variables/DEPLOY_BRANCH" \
                 --jq '.value' 2>/dev/null || echo "")
+              echo "[$candidate] DEPLOY_BRANCH='$CONFIGURED' vs BRANCH='$BRANCH'"
               if [ -n "$CONFIGURED" ] && [ "$CONFIGURED" = "$BRANCH" ]; then
                 ENV="$candidate"
                 break
