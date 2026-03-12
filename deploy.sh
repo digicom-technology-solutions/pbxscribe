@@ -59,7 +59,7 @@ BUILD_DIR=".build"
 ZIP_FILE="function.zip"
 
 # Parse flags (any position after environment arg)
-RUN_INFRA=true
+RUN_INFRA=false
 RUN_CODE=true
 RUN_MIGRATE=false
 DROP_TABLES=false

@@ -1,7 +1,7 @@
 // JWT utilities
-const jwt = require('jsonwebtoken');
+const jwt = require("jsonwebtoken");
 
-const DEFAULT_EXPIRY = '24h';
+const DEFAULT_EXPIRY = "24h";
 
 /**
  * Generate a signed JWT for a user
@@ -9,14 +9,10 @@ const DEFAULT_EXPIRY = '24h';
  * @returns {string} Signed JWT
  */
 function generateToken({sub, email, name}) {
-    const secret = process.env.JWT_SECRET;
-    if (!secret) throw new Error('JWT_SECRET environment variable is not set');
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error("JWT_SECRET environment variable is not set");
 
-    return jwt.sign(
-        {sub, email, name},
-        secret,
-        {expiresIn: DEFAULT_EXPIRY}
-    );
+  return jwt.sign({sub, email, name}, secret, {expiresIn: DEFAULT_EXPIRY});
 }
 
 /**
@@ -26,13 +22,13 @@ function generateToken({sub, email, name}) {
  * @throws {Error} If token is invalid or expired
  */
 function verifyToken(token) {
-    const secret = process.env.JWT_SECRET;
-    if (!secret) throw new Error('JWT_SECRET environment variable is not set');
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error("JWT_SECRET environment variable is not set");
 
-    return jwt.verify(token, secret);
+  return jwt.verify(token, secret);
 }
 
 module.exports = {
-    generateToken,
-    verifyToken,
+  generateToken,
+  verifyToken,
 };

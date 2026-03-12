@@ -13,8 +13,8 @@
 # - ProjectName must be 3-63 characters, lowercase letters, numbers, hyphens only
 # =============================================================================
 
-AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Foundation Database Infrastructure - RDS PostgreSQL, RDS Proxy, Security Groups'
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Foundation Database Infrastructure - RDS PostgreSQL, RDS Proxy, Security Groups"
 
 Parameters:
   Environment:
@@ -30,7 +30,7 @@ Parameters:
     Type: String
     Default: pbxscribe-api-backend
     Description: Project name used for resource naming (must match the network stack project name)
-    AllowedPattern: '^[a-z0-9-]+$'
+    AllowedPattern: "^[a-z0-9-]+$"
     ConstraintDescription: Must contain only lowercase letters, numbers, and hyphens
     MinLength: 3
     MaxLength: 63
@@ -39,20 +39,20 @@ Parameters:
     Type: String
     Default: postgres
     Description: Master username for RDS PostgreSQL database
-    AllowedPattern: '^[a-zA-Z][a-zA-Z0-9_]*$'
+    AllowedPattern: "^[a-zA-Z][a-zA-Z0-9_]*$"
     ConstraintDescription: Must begin with a letter and contain only alphanumeric characters and underscores
     MinLength: 1
     MaxLength: 63
 
   PostgreSQLVersion:
     Type: String
-    Default: '18'
+    Default: "18"
     AllowedValues:
-      - '18'
-      - '17'
-      - '16'
-      - '15'
-      - '14'
+      - "18"
+      - "17"
+      - "16"
+      - "15"
+      - "14"
     Description: PostgreSQL major version (AWS automatically uses latest minor version)
 
   DBInstanceClass:
@@ -70,54 +70,54 @@ Parameters:
 
   DBAllocatedStorage:
     Type: String
-    Default: '100'
+    Default: "100"
     Description: Allocated storage in GB (100 GB default, 20 GB minimum for gp3)
-    AllowedPattern: '^([2-9][0-9]|[1-9][0-9]{2,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-6])$'
+    AllowedPattern: "^([2-9][0-9]|[1-9][0-9]{2,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-6])$"
     ConstraintDescription: Must be a number between 20 and 65536
 
   DBName:
     Type: String
     Default: pbxscribe
     Description: Initial database name
-    AllowedPattern: '^[a-zA-Z][a-zA-Z0-9_]*$'
+    AllowedPattern: "^[a-zA-Z][a-zA-Z0-9_]*$"
     ConstraintDescription: Must begin with a letter and contain only alphanumeric characters and underscores
     MinLength: 1
     MaxLength: 63
 
   MultiAZ:
     Type: String
-    Default: 'false'
+    Default: "false"
     AllowedValues:
-      - 'true'
-      - 'false'
+      - "true"
+      - "false"
     Description: Enable Multi-AZ deployment for high availability (recommended for production)
 
 Conditions:
-  IsProduction: !Equals [!Ref Environment, 'prod']
+  IsProduction: !Equals [!Ref Environment, "prod"]
 
 Resources:
   DBSubnetGroup:
     Type: AWS::RDS::DBSubnetGroup
     Properties:
-      DBSubnetGroupName: !Sub '${ProjectName}-${Environment}-db-subnet-group'
-      DBSubnetGroupDescription: !Sub 'DB Subnet Group for ${ProjectName} ${Environment}'
+      DBSubnetGroupName: !Sub "${ProjectName}-${Environment}-db-subnet-group"
+      DBSubnetGroupDescription: !Sub "DB Subnet Group for ${ProjectName} ${Environment}"
       SubnetIds:
-        - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-database-subnet-1'
-        - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-database-subnet-2'
-        - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-database-subnet-3'
+        - Fn::ImportValue: !Sub "${ProjectName}-${Environment}-database-subnet-1"
+        - Fn::ImportValue: !Sub "${ProjectName}-${Environment}-database-subnet-2"
+        - Fn::ImportValue: !Sub "${ProjectName}-${Environment}-database-subnet-3"
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-db-subnet-group'
+          Value: !Sub "${ProjectName}-${Environment}-db-subnet-group"
         - Key: Environment
           Value: !Ref Environment
 
   DBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: !Sub '${ProjectName}-${Environment}-db-sg'
-      GroupDescription: !Sub 'Security group for ${ProjectName} ${Environment} RDS PostgreSQL database'
+      GroupName: !Sub "${ProjectName}-${Environment}-db-sg"
+      GroupDescription: !Sub "Security group for ${ProjectName} ${Environment} RDS PostgreSQL database"
       VpcId:
-        Fn::ImportValue: !Sub '${ProjectName}-${Environment}-vpc-id'
+        Fn::ImportValue: !Sub "${ProjectName}-${Environment}-vpc-id"
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 5432
@@ -126,10 +126,10 @@ Resources:
             Fn::Select:
               - 6
               - Fn::Cidr:
-                - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-vpc-cidr'
-                - 16
-                - 4
-          Description: 'PostgreSQL access from App Subnet 1'
+                  - Fn::ImportValue: !Sub "${ProjectName}-${Environment}-vpc-cidr"
+                  - 16
+                  - 12
+          Description: "PostgreSQL access from App Subnet 1"
         - IpProtocol: tcp
           FromPort: 5432
           ToPort: 5432
@@ -137,10 +137,10 @@ Resources:
             Fn::Select:
               - 7
               - Fn::Cidr:
-                - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-vpc-cidr'
-                - 16
-                - 4
-          Description: 'PostgreSQL access from App Subnet 2'
+                  - Fn::ImportValue: !Sub "${ProjectName}-${Environment}-vpc-cidr"
+                  - 16
+                  - 12
+          Description: "PostgreSQL access from App Subnet 2"
         - IpProtocol: tcp
           FromPort: 5432
           ToPort: 5432
@@ -148,47 +148,47 @@ Resources:
             Fn::Select:
               - 8
               - Fn::Cidr:
-                - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-vpc-cidr'
-                - 16
-                - 4
-          Description: 'PostgreSQL access from App Subnet 3'
+                  - Fn::ImportValue: !Sub "${ProjectName}-${Environment}-vpc-cidr"
+                  - 16
+                  - 12
+          Description: "PostgreSQL access from App Subnet 3"
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-db-sg'
+          Value: !Sub "${ProjectName}-${Environment}-db-sg"
         - Key: Environment
           Value: !Ref Environment
 
   DBSecret:
     Type: AWS::SecretsManager::Secret
     Properties:
-      Name: !Sub '${ProjectName}-${Environment}-db-secret'
-      Description: !Sub 'RDS PostgreSQL master credentials for ${ProjectName} ${Environment}'
+      Name: !Sub "${ProjectName}-${Environment}-db-secret"
+      Description: !Sub "RDS PostgreSQL master credentials for ${ProjectName} ${Environment}"
       GenerateSecretString:
         SecretStringTemplate: !Sub '{"username":"${DBMasterUsername}"}'
-        GenerateStringKey: 'password'
+        GenerateStringKey: "password"
         PasswordLength: 32
         ExcludeCharacters: '"@/\'
         RequireEachIncludedType: true
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-db-secret'
+          Value: !Sub "${ProjectName}-${Environment}-db-secret"
         - Key: Environment
           Value: !Ref Environment
 
   DBParameterGroup:
     Type: AWS::RDS::DBParameterGroup
     Properties:
-      DBParameterGroupName: !Sub '${ProjectName}-${Environment}-db-params'
-      Description: !Sub 'Parameter group for ${ProjectName} ${Environment} PostgreSQL ${PostgreSQLVersion}'
-      Family: !Sub 'postgres${PostgreSQLVersion}'
+      DBParameterGroupName: !Sub "${ProjectName}-${Environment}-db-params"
+      Description: !Sub "Parameter group for ${ProjectName} ${Environment} PostgreSQL ${PostgreSQLVersion}"
+      Family: !Sub "postgres${PostgreSQLVersion}"
       Parameters:
-        shared_preload_libraries: 'pg_stat_statements'
-        log_statement: 'all'
-        log_min_duration_statement: '1000'
-        timezone: 'UTC'
+        shared_preload_libraries: "pg_stat_statements"
+        log_statement: "all"
+        log_min_duration_statement: "1000"
+        timezone: "UTC"
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-db-params'
+          Value: !Sub "${ProjectName}-${Environment}-db-params"
         - Key: Environment
           Value: !Ref Environment
 
@@ -197,7 +197,7 @@ Resources:
     DeletionPolicy: Snapshot
     UpdateReplacePolicy: Snapshot
     Properties:
-      DBInstanceIdentifier: !Sub '${ProjectName}-${Environment}-db'
+      DBInstanceIdentifier: !Sub "${ProjectName}-${Environment}-db"
       DBName: !Ref DBName
       Engine: postgres
       EngineVersion: !Ref PostgreSQLVersion
@@ -205,36 +205,37 @@ Resources:
       AllocatedStorage: !Ref DBAllocatedStorage
       StorageType: gp3
       StorageEncrypted: true
-      MasterUsername: !Sub '{{resolve:secretsmanager:${DBSecret}:SecretString:username}}'
-      MasterUserPassword: !Sub '{{resolve:secretsmanager:${DBSecret}:SecretString:password}}'
+      MasterUsername: !Sub "{{resolve:secretsmanager:${DBSecret}:SecretString:username}}"
+      MasterUserPassword: !Sub "{{resolve:secretsmanager:${DBSecret}:SecretString:password}}"
       DBSubnetGroupName: !Ref DBSubnetGroup
       VPCSecurityGroups:
         - !Ref DBSecurityGroup
       DBParameterGroupName: !Ref DBParameterGroup
       MultiAZ: !Ref MultiAZ
       BackupRetentionPeriod: 7
-      PreferredBackupWindow: '03:00-04:00'
-      PreferredMaintenanceWindow: 'sun:04:00-sun:05:00'
+      PreferredBackupWindow: "03:00-04:00"
+      PreferredMaintenanceWindow: "sun:04:00-sun:05:00"
       EnableCloudwatchLogsExports:
         - postgresql
         - upgrade
       EnablePerformanceInsights: !If [IsProduction, true, false]
-      PerformanceInsightsRetentionPeriod: !If [IsProduction, 7, !Ref 'AWS::NoValue']
+      PerformanceInsightsRetentionPeriod:
+        !If [IsProduction, 7, !Ref "AWS::NoValue"]
       DeletionProtection: true
       CopyTagsToSnapshot: true
       PubliclyAccessible: false
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-db'
+          Value: !Sub "${ProjectName}-${Environment}-db"
         - Key: Environment
           Value: !Ref Environment
 
   DBProxyRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub '${ProjectName}-${Environment}-db-proxy-role'
+      RoleName: !Sub "${ProjectName}-${Environment}-db-proxy-role"
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
@@ -243,7 +244,7 @@ Resources:
       Policies:
         - PolicyName: DBProxySecretsManagerPolicy
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action:
@@ -251,14 +252,14 @@ Resources:
                 Resource: !Ref DBSecret
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-db-proxy-role'
+          Value: !Sub "${ProjectName}-${Environment}-db-proxy-role"
         - Key: Environment
           Value: !Ref Environment
 
   DBProxy:
     Type: AWS::RDS::DBProxy
     Properties:
-      DBProxyName: !Sub '${ProjectName}-${Environment}-db-proxy'
+      DBProxyName: !Sub "${ProjectName}-${Environment}-db-proxy"
       EngineFamily: POSTGRESQL
       Auth:
         - AuthScheme: SECRETS
@@ -266,9 +267,9 @@ Resources:
           IAMAuth: DISABLED
       RoleArn: !GetAtt DBProxyRole.Arn
       VpcSubnetIds:
-        - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-app-subnet-1'
-        - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-app-subnet-2'
-        - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-app-subnet-3'
+        - Fn::ImportValue: !Sub "${ProjectName}-${Environment}-app-subnet-1"
+        - Fn::ImportValue: !Sub "${ProjectName}-${Environment}-app-subnet-2"
+        - Fn::ImportValue: !Sub "${ProjectName}-${Environment}-app-subnet-3"
       VpcSecurityGroupIds:
         - !Ref DBSecurityGroup
       RequireTLS: true
@@ -276,7 +277,7 @@ Resources:
       DebugLogging: false
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-db-proxy'
+          Value: !Sub "${ProjectName}-${Environment}-db-proxy"
         - Key: Environment
           Value: !Ref Environment
 
@@ -297,58 +298,58 @@ Outputs:
     Description: DB Subnet Group Name
     Value: !Ref DBSubnetGroup
     Export:
-      Name: !Sub '${ProjectName}-${Environment}-db-subnet-group-name'
+      Name: !Sub "${ProjectName}-${Environment}-db-subnet-group-name"
 
   DBSecurityGroupId:
     Description: Database Security Group ID
     Value: !Ref DBSecurityGroup
     Export:
-      Name: !Sub '${ProjectName}-${Environment}-db-sg-id'
+      Name: !Sub "${ProjectName}-${Environment}-db-sg-id"
 
   DBSecretArn:
     Description: Database Secret ARN
     Value: !Ref DBSecret
     Export:
-      Name: !Sub '${ProjectName}-${Environment}-db-secret-arn'
+      Name: !Sub "${ProjectName}-${Environment}-db-secret-arn"
 
   DBParameterGroupName:
     Description: DB Parameter Group Name
     Value: !Ref DBParameterGroup
     Export:
-      Name: !Sub '${ProjectName}-${Environment}-db-params-name'
+      Name: !Sub "${ProjectName}-${Environment}-db-params-name"
 
   DBInstanceIdentifier:
     Description: RDS Instance Identifier
     Value: !Ref DBInstance
     Export:
-      Name: !Sub '${ProjectName}-${Environment}-db-identifier'
+      Name: !Sub "${ProjectName}-${Environment}-db-identifier"
 
   DBEndpointAddress:
     Description: RDS Instance Endpoint Address
     Value: !GetAtt DBInstance.Endpoint.Address
     Export:
-      Name: !Sub '${ProjectName}-${Environment}-db-endpoint'
+      Name: !Sub "${ProjectName}-${Environment}-db-endpoint"
 
   DBEndpointPort:
     Description: RDS Instance Port
     Value: !GetAtt DBInstance.Endpoint.Port
     Export:
-      Name: !Sub '${ProjectName}-${Environment}-db-port'
+      Name: !Sub "${ProjectName}-${Environment}-db-port"
 
   DBName:
     Description: Database Name
     Value: !Ref DBName
     Export:
-      Name: !Sub '${ProjectName}-${Environment}-db-name'
+      Name: !Sub "${ProjectName}-${Environment}-db-name"
 
   DBProxyEndpoint:
     Description: RDS Proxy Endpoint
     Value: !GetAtt DBProxy.Endpoint
     Export:
-      Name: !Sub '${ProjectName}-${Environment}-db-proxy-endpoint'
+      Name: !Sub "${ProjectName}-${Environment}-db-proxy-endpoint"
 
   DBProxyArn:
     Description: RDS Proxy ARN
     Value: !GetAtt DBProxy.DBProxyArn
     Export:
-      Name: !Sub '${ProjectName}-${Environment}-db-proxy-arn'
+      Name: !Sub "${ProjectName}-${Environment}-db-proxy-arn"

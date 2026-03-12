@@ -5,11 +5,13 @@
 This guide covers deploying the network and database infrastructure for the pbxscribe-api-backend project.
 
 ### Prerequisites
+
 - AWS CLI installed and configured
 - AWS credentials with appropriate permissions (using dts profile)
 - Correct region configured (us-east-2)
 
 ### Verify AWS Configuration
+
 ```bash
 # Check your AWS configuration
 aws configure list --profile dts
@@ -26,6 +28,7 @@ aws configure get region --profile dts
 The network stack creates the VPC, subnets, route tables, NAT gateway, and internet gateway.
 
 ### Deploy Network Stack
+
 ```bash
 aws cloudformation create-stack \
   --stack-name pbxscribe-api-backend-dev-network \
@@ -42,6 +45,7 @@ aws cloudformation create-stack \
 ```
 
 ### Monitor Network Stack Deployment
+
 ```bash
 # Watch the stack creation progress
 aws cloudformation describe-stacks \
@@ -59,6 +63,7 @@ aws cloudformation describe-stack-events \
 ```
 
 ### Verify Network Stack Outputs
+
 ```bash
 # View all stack outputs
 aws cloudformation describe-stacks \
@@ -77,6 +82,7 @@ The database stack creates the RDS PostgreSQL instance, RDS Proxy, security grou
 **IMPORTANT**: The network stack must be deployed and complete before deploying this stack.
 
 ### Deploy Database Stack
+
 ```bash
 aws cloudformation create-stack \
   --stack-name pbxscribe-api-backend-dev-database \
@@ -99,6 +105,7 @@ aws cloudformation create-stack \
 ```
 
 ### Monitor Database Stack Deployment
+
 ```bash
 # Watch the stack creation progress
 aws cloudformation describe-stacks \
@@ -116,6 +123,7 @@ aws cloudformation describe-stack-events \
 ```
 
 ### Verify Database Stack Outputs
+
 ```bash
 # View all stack outputs
 aws cloudformation describe-stacks \
@@ -158,6 +166,7 @@ The API stack creates Lambda functions, API Gateway, and custom domain configura
 **IMPORTANT**: Both network and database stacks must be deployed and complete before deploying this stack.
 
 **Domain Names by Environment:**
+
 - **dev**: api-dev.pbxscribe.com
 - **staging**: api-staging.pbxscribe.com
 - **prod**: api.pbxscribe.com
@@ -218,6 +227,7 @@ aws cloudformation list-exports \
 ```
 
 **Expected Exports** (minimum required):
+
 - `pbxscribe-api-backend-dev-vpc-id`
 - `pbxscribe-api-backend-dev-app-subnet-1`
 - `pbxscribe-api-backend-dev-app-subnet-2`
@@ -356,6 +366,7 @@ aws cloudformation create-stack \
 ```
 
 **Note**: The domain name is automatically constructed based on the environment:
+
 - dev → api-dev.pbxscribe.com
 - staging → api-staging.pbxscribe.com
 - prod → api.pbxscribe.com
@@ -432,6 +443,7 @@ curl -i $API_URL/health/db
 ```
 
 **Expected Output**:
+
 - **GET /**: `200 OK` with JSON response showing API information
 - **GET /health**: `200 OK` with `{"status":"ok"}`
 - **GET /ready**: `200 OK` with `{"status":"ready"}`
@@ -457,13 +469,21 @@ curl -s -X POST $API_URL/migrate \
 ```
 
 **Expected Output** (first run):
+
 ```json
-{ "applied": ["001_create_users_table.sql", "002_create_user_credentials_table.sql"], "message": "Successfully applied 2 migration(s)" }
+{
+  "applied": [
+    "001_create_users_table.sql",
+    "002_create_user_credentials_table.sql"
+  ],
+  "message": "Successfully applied 2 migration(s)"
+}
 ```
 
 **Expected Output** (subsequent runs — idempotent):
+
 ```json
-{ "applied": [], "message": "No pending migrations" }
+{"applied": [], "message": "No pending migrations"}
 ```
 
 #### Test Auth Endpoints
@@ -576,12 +596,16 @@ echo "MIGRATION_SECRET=$(openssl rand -base64 24)"
 ```
 
 Your `.env` should look like:
+
 ```
 ENVIRONMENT=dev
 AWS_REGION=us-east-2
 AWS_PROFILE=dts
 JWT_SECRET=<generated above>
 MIGRATION_SECRET=<generated above>
+PBXSCRIBE_DOMAIN=pbxscribe.com
+TWILIO_ACCOUNT_SID=<twilio account sid>
+TWILIO_AUTH_TOKEN=<twilio auth token>
 ```
 
 #### Deploy
@@ -611,7 +635,7 @@ The template deploys a placeholder Lambda function. To deploy your actual Fastif
 
 ```bash
 # Navigate to the project root directory
-cd /Users/rayhan/Code/dts-pbxscribe
+cd /pbxscribe
 
 # Package the Lambda function (if not already done in pre-deployment)
 cd src/api
@@ -640,6 +664,7 @@ aws lambda get-function \
 ```
 
 **Expected Output**:
+
 - State: `Active`
 - Runtime: `nodejs20.x`
 - Handler: `index.handler`
@@ -940,21 +965,25 @@ aws iam list-role-policies \
 #### Common Issues and Solutions
 
 **Issue**: Lambda returns "Task timed out after 30.00 seconds"
+
 - **Solution**: Increase Lambda timeout or check if Lambda is waiting on external service (database, etc.)
 - Check database connection and network connectivity
 
 **Issue**: "Cannot connect to database"
+
 - **Solution**: Verify Lambda is in correct VPC subnets
 - Check security group rules allow Lambda → RDS connection
 - Verify RDS Proxy is available and healthy
 - Check database credentials in Secrets Manager
 
 **Issue**: "Internal Server Error" from API Gateway
+
 - **Solution**: Check Lambda logs for actual error
 - Verify Lambda function is active and not in failed state
 - Check Lambda permissions
 
 **Issue**: Cold start is slow
+
 - **Solution**: Increase Lambda memory (more memory = more CPU)
 - Consider using provisioned concurrency for production
 - Optimize application initialization code
@@ -966,6 +995,7 @@ aws iam list-role-policies \
 After deployment, verify that the database is working properly and properly secured.
 
 ### Check Database Stack Status
+
 ```bash
 # View database stack status and outputs
 aws cloudformation describe-stacks \
@@ -976,6 +1006,7 @@ aws cloudformation describe-stacks \
 ```
 
 ### Verify RDS Instance Status
+
 ```bash
 # Check RDS instance health and configuration
 aws rds describe-db-instances \
@@ -986,6 +1017,7 @@ aws rds describe-db-instances \
 ```
 
 **Expected Output**:
+
 - Status: `available`
 - Engine: `postgres`
 - EngineVersion: `18.x`
@@ -993,6 +1025,7 @@ aws rds describe-db-instances \
 - PubliclyAccessible: `false` ✅ (Database is private)
 
 ### Verify RDS Proxy Status
+
 ```bash
 # Check RDS Proxy health
 aws rds describe-db-proxies \
@@ -1010,11 +1043,13 @@ aws rds describe-db-proxy-targets \
 ```
 
 **Expected Output**:
+
 - Proxy Status: `available`
 - Target State: `AVAILABLE`
 - RequireTLS: `true` ✅
 
 ### Verify Security Configuration (Database is Private)
+
 ```bash
 # Confirm database is NOT publicly accessible
 aws rds describe-db-instances \
@@ -1037,12 +1072,14 @@ aws ec2 describe-security-groups \
 ```
 
 **Expected Security Configuration**:
+
 - PubliclyAccessible: `false` ✅
 - Security Group: Only allows PostgreSQL (port 5432) from app subnets within VPC
 - No public IP address assigned
 - Database subnets have no internet gateway route
 
 ### View Database Credentials
+
 ```bash
 # Retrieve credentials from Secrets Manager
 aws secretsmanager get-secret-value \
@@ -1059,6 +1096,7 @@ aws secretsmanager get-secret-value \
 ```
 
 ### Monitor Database Performance
+
 ```bash
 # View CloudWatch logs
 aws logs tail /aws/rds/instance/pbxscribe-api-backend-dev-db/postgresql \
@@ -1096,6 +1134,7 @@ aws cloudwatch get-metric-statistics \
 **IMPORTANT**: Since the database is in a private subnet, you MUST connect from within the VPC.
 
 #### Option 1: From EC2 Instance in App Subnet
+
 ```bash
 # Launch an EC2 instance in one of the app subnets, then:
 
@@ -1121,6 +1160,7 @@ psql -h $PROXY_ENDPOINT -p 5432 -U postgres -d pbxscribe
 ```
 
 #### Option 2: Python Test Script
+
 ```python
 import psycopg2
 
@@ -1154,6 +1194,7 @@ except Exception as e:
 ### Connection Information for Applications
 
 **Use RDS Proxy Endpoint (Recommended)**:
+
 ```bash
 # Get connection details
 aws cloudformation describe-stacks \
@@ -1164,6 +1205,7 @@ aws cloudformation describe-stacks \
 ```
 
 **Environment Variables for Your Application**:
+
 ```bash
 export DB_HOST=<DBProxyEndpoint from outputs>
 export DB_PORT=5432
@@ -1174,6 +1216,7 @@ export DB_SSL_MODE=require
 ```
 
 **Connection String Format**:
+
 ```
 postgresql://postgres:<password>@<proxy-endpoint>:5432/pbxscribe?sslmode=require
 ```
@@ -1181,6 +1224,7 @@ postgresql://postgres:<password>@<proxy-endpoint>:5432/pbxscribe?sslmode=require
 ### Verification Checklist
 
 After deployment, verify:
+
 - [x] CloudFormation stack status is `CREATE_COMPLETE`
 - [x] RDS instance status is `available`
 - [x] RDS Proxy status is `available` and targets are healthy
@@ -1199,6 +1243,7 @@ After deployment, verify:
 If you need to update a stack with changes:
 
 ### Update Network Stack
+
 ```bash
 aws cloudformation update-stack \
   --stack-name pbxscribe-api-backend-dev-network \
@@ -1212,6 +1257,7 @@ aws cloudformation update-stack \
 ```
 
 ### Update Database Stack
+
 ```bash
 aws cloudformation update-stack \
   --stack-name pbxscribe-api-backend-dev-database \
@@ -1319,6 +1365,7 @@ aws cloudformation wait stack-delete-complete \
 ## Troubleshooting
 
 ### View Stack Events
+
 ```bash
 aws cloudformation describe-stack-events \
   --stack-name <stack-name> \
@@ -1327,6 +1374,7 @@ aws cloudformation describe-stack-events \
 ```
 
 ### View Stack Resources
+
 ```bash
 aws cloudformation describe-stack-resources \
   --stack-name <stack-name> \
@@ -1335,6 +1383,7 @@ aws cloudformation describe-stack-resources \
 ```
 
 ### Validate Template Before Deployment
+
 ```bash
 # Validate any CloudFormation template
 aws cloudformation validate-template \

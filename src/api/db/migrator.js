@@ -1,8 +1,8 @@
 // Database migration runner
-const { Client } = require('pg');
-const { getDatabaseConfig } = require('../config/database');
-const fs = require('fs');
-const path = require('path');
+const {Client} = require("pg");
+const {getDatabaseConfig} = require("../config/database");
+const fs = require("fs");
+const path = require("path");
 
 /**
  * Ensure schema_migrations table exists
@@ -25,9 +25,9 @@ async function ensureMigrationsTable(client) {
  */
 async function getAppliedMigrations(client) {
   const result = await client.query(
-    'SELECT filename FROM schema_migrations ORDER BY filename'
+    "SELECT filename FROM schema_migrations ORDER BY filename",
   );
-  return result.rows.map(row => row.filename);
+  return result.rows.map((row) => row.filename);
 }
 
 /**
@@ -36,21 +36,22 @@ async function getAppliedMigrations(client) {
  * @returns {string[]} Array of pending migration filenames
  */
 function getPendingMigrations(appliedMigrations) {
-  const migrationsDir = path.join(__dirname, '..', 'db', 'migrations');
+  const migrationsDir = path.join(__dirname, "..", "db", "migrations");
 
   // Create migrations directory if it doesn't exist
   if (!fs.existsSync(migrationsDir)) {
-    fs.mkdirSync(migrationsDir, { recursive: true });
+    fs.mkdirSync(migrationsDir, {recursive: true});
     return [];
   }
 
   // Read all .sql files from migrations directory
-  const files = fs.readdirSync(migrationsDir)
-    .filter(file => file.endsWith('.sql'))
+  const files = fs
+    .readdirSync(migrationsDir)
+    .filter((file) => file.endsWith(".sql"))
     .sort();
 
   // Filter out already applied migrations
-  return files.filter(file => !appliedMigrations.includes(file));
+  return files.filter((file) => !appliedMigrations.includes(file));
 }
 
 /**
@@ -59,29 +60,28 @@ function getPendingMigrations(appliedMigrations) {
  * @param {string} filename - Migration filename
  */
 async function runMigration(client, filename) {
-  const migrationsDir = path.join(__dirname, '..', 'db', 'migrations');
+  const migrationsDir = path.join(__dirname, "..", "db", "migrations");
   const filePath = path.join(migrationsDir, filename);
 
   // Read migration SQL
-  const sql = fs.readFileSync(filePath, 'utf8');
+  const sql = fs.readFileSync(filePath, "utf8");
 
   // Run migration in a transaction
-  await client.query('BEGIN');
+  await client.query("BEGIN");
 
   try {
     // Execute migration SQL
     await client.query(sql);
 
     // Record migration as applied
-    await client.query(
-      'INSERT INTO schema_migrations (filename) VALUES ($1)',
-      [filename]
-    );
+    await client.query("INSERT INTO schema_migrations (filename) VALUES ($1)", [
+      filename,
+    ]);
 
-    await client.query('COMMIT');
+    await client.query("COMMIT");
     console.log(`✓ Applied migration: ${filename}`);
   } catch (error) {
-    await client.query('ROLLBACK');
+    await client.query("ROLLBACK");
     console.error(`✗ Failed to apply migration: ${filename}`);
     throw error;
   }
@@ -93,11 +93,13 @@ async function runMigration(client, filename) {
  */
 async function dropAllTables(client) {
   await client.query(`
+	DROP TABLE IF EXISTS payment_methods CASCADE;
     DROP TABLE IF EXISTS user_credentials CASCADE;
     DROP TABLE IF EXISTS users CASCADE;
+	DROP TABLE IF EXISTS clients CASCADE;
   `);
-  await client.query('DELETE FROM schema_migrations');
-  console.log('All tables dropped and migration history cleared');
+  await client.query("DELETE FROM schema_migrations");
+  console.log("All tables dropped and migration history cleared");
 }
 
 /**
@@ -105,13 +107,13 @@ async function dropAllTables(client) {
  * @param {{ dropTables?: boolean }} [options]
  * @returns {Promise<{applied: string[], message: string}>} Migration result
  */
-async function runMigrations({ dropTables = false } = {}) {
+async function runMigrations({dropTables = false} = {}) {
   const dbConfig = await getDatabaseConfig();
   const client = new Client(dbConfig);
 
   try {
     await client.connect();
-    console.log('Connected to database for migrations');
+    console.log("Connected to database for migrations");
 
     // Ensure migrations table exists
     await ensureMigrationsTable(client);
@@ -125,10 +127,10 @@ async function runMigrations({ dropTables = false } = {}) {
     const pendingMigrations = getPendingMigrations(appliedMigrations);
 
     if (pendingMigrations.length === 0) {
-      console.log('No pending migrations');
+      console.log("No pending migrations");
       return {
         applied: [],
-        message: 'No pending migrations'
+        message: "No pending migrations",
       };
     }
 
@@ -141,7 +143,7 @@ async function runMigrations({ dropTables = false } = {}) {
 
     return {
       applied: pendingMigrations,
-      message: `Successfully applied ${pendingMigrations.length} migration(s)`
+      message: `Successfully applied ${pendingMigrations.length} migration(s)`,
     };
   } finally {
     await client.end();
@@ -149,5 +151,5 @@ async function runMigrations({ dropTables = false } = {}) {
 }
 
 module.exports = {
-  runMigrations
+  runMigrations,
 };
