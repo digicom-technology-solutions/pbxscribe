@@ -93,10 +93,18 @@ async function runMigration(client, filename) {
  */
 async function dropAllTables(client) {
   await client.query(`
+	DROP TABLE IF EXISTS ticket_messages CASCADE;
+	DROP TABLE IF EXISTS support_tickets CASCADE;
+	DROP TABLE IF EXISTS referrals CASCADE;
+	DROP TABLE IF EXISTS invoices CASCADE;
+	DROP TABLE IF EXISTS reset_password CASCADE;
+	DROP TABLE IF EXISTS phone_numbers CASCADE;
+	DROP TABLE IF EXISTS logs CASCADE;
 	DROP TABLE IF EXISTS payment_methods CASCADE;
     DROP TABLE IF EXISTS user_credentials CASCADE;
     DROP TABLE IF EXISTS users CASCADE;
 	DROP TABLE IF EXISTS clients CASCADE;
+	DROP TABLE IF EXISTS subscription_plans CASCADE;
   `);
   await client.query("DELETE FROM schema_migrations");
   console.log("All tables dropped and migration history cleared");

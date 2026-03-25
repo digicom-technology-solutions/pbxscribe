@@ -10,8 +10,13 @@ const migrateRoutes = require("./routes/migrate");
 const userRoutes = require("./routes/users");
 const clientRoutes = require("./routes/clients");
 const paymentMethodRoutes = require("./routes/paymentMethods");
-const twilioRoutes = require("./routes/phoneNumbers");
+const invoicesRoutes = require("./routes/invoices");
+const subscriptionPlansRoutes = require("./routes/subscriptionPlans");
+const phoneNumberRoutes = require("./routes/phoneNumbers");
+const referralsRoutes = require("./routes/referrals");
 const logRoutes = require("./routes/logs");
+const supportTicketRoutes = require("./routes/supportTickets");
+const ticketMessageRoutes = require("./routes/ticketMessages");
 const authRoutes = require("./routes/auth");
 const apiKeyRoutes = require("./routes/apiKeys");
 
@@ -77,9 +82,13 @@ async function init() {
       await fastify.register(paymentMethodRoutes);
       await fastify.register(authRoutes);
       await fastify.register(apiKeyRoutes);
-      await fastify.register(twilioRoutes);
+      await fastify.register(phoneNumberRoutes);
+      await fastify.register(referralsRoutes);
       await fastify.register(logRoutes);
-
+      await fastify.register(invoicesRoutes);
+      await fastify.register(subscriptionPlansRoutes);
+      await fastify.register(supportTicketRoutes);
+      await fastify.register(ticketMessageRoutes);
       // Root route
       fastify.get(
         "/",

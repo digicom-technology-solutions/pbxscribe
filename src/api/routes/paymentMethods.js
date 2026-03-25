@@ -11,13 +11,13 @@ const paymentMethodSchema = {
   type: "object",
   properties: {
     id: {type: "integer"},
-    card_number: {type: "string"},
-    cardholder_name: {type: "string"},
-    security_code: {type: "string"},
-    expiry_date: {type: "string"},
-    client_id: {type: "integer"},
+    card_number: {type: "string", minLength: 10, maxLength: 50},
+    cardholder_name: {type: "string", minLength: 1, maxLength: 255},
+    security_code: {type: "string", minLength: 3, maxLength: 4},
+    expiry_date: {type: "string", format: "date"},
     is_default: {type: "boolean"},
     card_status: {type: "string", enum: ["active", "inactive", "expired"]},
+    client_id: {type: "integer"},
     created_at: {type: "string", format: "date-time"},
     updated_at: {type: "string", format: "date-time"},
   },
@@ -108,7 +108,7 @@ async function paymentMethodRoutes(fastify) {
 
   // GET /payment-methods — list payment methods
   fastify.get(
-    "/payment-methods",
+    "/payment-methods/client/:client_id",
     {
       preHandler: [fastify.authenticate],
       schema: {

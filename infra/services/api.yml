@@ -76,6 +76,11 @@ Parameters:
     MinLength: 16
     Description: Secret used to protect the POST /migrate endpoint (min 16 characters)
 
+  PbxscribeDomain:
+    Type: String
+    NoEcho: true
+    Description: PBXScribe domain for email integration (https://www.pbxscribe.com/console)
+
   TwilioAccountSid:
     Type: String
     NoEcho: true
@@ -207,6 +212,7 @@ Resources:
           API_BASE_URL: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}"
           JWT_SECRET: !GetAtt JwtSecretParameter.Value
           MIGRATION_SECRET: !GetAtt MigrationSecretParameter.Value
+          PBXSCRIBE_DOMAIN: !Ref PbxscribeDomain
           TWILIO_ACCOUNT_SID: !Ref TwilioAccountSid
           TWILIO_AUTH_TOKEN: !Ref TwilioAuthToken
       Code:

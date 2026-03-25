@@ -98,12 +98,17 @@ async function updatePaymentMethod(pool, id, fields) {
 /**
  * List payment methods with pagination and optional status filter
  * @param {Pool} pool
+ * @param {number} client_id - Client ID
  * @param {{ limit?: number, offset?: number, status?: string }} options
  * @returns {Promise<{ paymentMethods: Object[], total: number }>}
  */
-async function listPaymentMethods(pool, {limit = 20, offset = 0, status} = {}) {
-  const conditions = [];
-  const values = [];
+async function listPaymentMethods(
+  pool,
+  client_id,
+  {limit = 20, offset = 0, status} = {},
+) {
+  const conditions = [`client_id = $1`];
+  const values = [client_id];
 
   if (status) {
     values.push(status);

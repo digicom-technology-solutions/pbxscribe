@@ -53,7 +53,7 @@ async function createUser(
  */
 async function findUserById(pool, id) {
   const result = await pool.query(
-    `SELECT id, email, pbx_email, firstname, lastname, phone, sms_notification, timezone, user_type, user_role, user_status, two_fa_enabled, created_at, updated_at
+    `SELECT id, client_id, email, pbx_email, firstname, lastname, phone, sms_notification, timezone, user_type, user_role, user_status, two_fa_enabled, created_at, updated_at
      FROM users
      WHERE id = $1`,
     [id],
@@ -69,7 +69,7 @@ async function findUserById(pool, id) {
  */
 async function findUserByEmail(pool, email) {
   const result = await pool.query(
-    `SELECT id, email, pbx_email, firstname, lastname, phone, sms_notification, timezone, user_type, user_role, user_status, two_fa_enabled, created_at, updated_at
+    `SELECT id, client_id, email, pbx_email, firstname, lastname, phone, sms_notification, timezone, user_type, user_role, user_status, two_fa_enabled, created_at, updated_at
      FROM users
      WHERE email = $1`,
     [email],
@@ -116,7 +116,7 @@ async function updateUser(pool, id, fields) {
     `UPDATE users
      SET ${updates.join(", ")}
      WHERE id = $${values.length}
-     RETURNING id, email, pbx_email, firstname, lastname, phone, sms_notification, timezone, user_type, user_role, user_status, two_fa_enabled, created_at, updated_at`,
+     RETURNING id, client_id, email, pbx_email, firstname, lastname, phone, sms_notification, timezone, user_type, user_role, user_status, two_fa_enabled, created_at, updated_at`,
     values,
   );
   return result.rows[0] || null;
@@ -148,7 +148,7 @@ async function listUsers(
   // Run data query and count query in parallel
   const [dataResult, countResult] = await Promise.all([
     pool.query(
-      `SELECT id, email, pbx_email, firstname, lastname, phone, sms_notification, timezone, user_type, user_role, user_status, two_fa_enabled, created_at, updated_at
+      `SELECT id, client_id, email, pbx_email, firstname, lastname, phone, sms_notification, timezone, user_type, user_role, user_status, two_fa_enabled, created_at, updated_at
        FROM users
        ${where}
        ORDER BY created_at DESC
@@ -171,11 +171,8 @@ async function listUsers(
  * @param {string} id - UUID
  * @returns {Promise<boolean>} true if deleted, false if not found
  */
-async function deleteUser(pool, client_id, id) {
-  const result = await pool.query(
-    "DELETE FROM users WHERE id = $1 AND client_id = $2",
-    [id, client_id],
-  );
+async function deleteUser(pool, id) {
+  const result = await pool.query("DELETE FROM users WHERE id = $1", [id]);
   return result.rowCount > 0;
 }
 

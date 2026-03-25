@@ -7,6 +7,11 @@ const {
   deactivateCredential,
 } = require("../repositories/credentialRepository");
 const {
+  requestPasswordReset,
+  findTokenByEmail,
+  deleteToken,
+} = require("../repositories/passwordResetRepository");
+const {
   hashPassword,
   verifyPassword,
   checkPasswordStrength,
@@ -155,7 +160,6 @@ async function authRoutes(fastify) {
       const token = generateToken({
         sub: user.id,
         email: user.email,
-        client_id: user.client_id,
         name: `${user.firstname} ${user.lastname}`,
       });
       return reply.status(201).send({user, token});
@@ -274,6 +278,218 @@ async function authRoutes(fastify) {
         });
       }
       return {token, user};
+    },
+  );
+
+  // POST /auth/request-reset-password — protected
+  fastify.post(
+    "/auth/request-reset-password",
+    {
+      schema: {
+        tags: ["Auth"],
+        summary: "Request password reset",
+        description: "Allows a user to request a password reset.",
+        body: {
+          type: "object",
+          required: ["email"],
+          properties: {
+            email: {type: "string", format: "email"},
+          },
+          additionalProperties: false,
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              token: {type: "string", description: "JWT bearer token"},
+              user: {
+                type: "object",
+                properties: {
+                  id: {type: "integer"},
+                  client_id: {type: "integer"},
+                  email: {type: "string", format: "email"},
+                  token: {type: "boolean"},
+                  expires_at: {type: "string", format: "date-time"},
+                  created_at: {type: "string", format: "date-time"},
+                },
+              },
+            },
+          },
+          401: {
+            type: "object",
+            properties: {
+              error: {
+                type: "object",
+                properties: {
+                  message: {type: "string"},
+                  statusCode: {type: "integer"},
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const {email} = request.body;
+      const genericError = {
+        error: {message: "User does not exists", statusCode: 404},
+      };
+
+      const user = await findUserByEmail(fastify.pg, email);
+      if (!user || user.user_status !== "enabled") {
+        return reply.status(401).send(genericError);
+      }
+
+      console.log("User requested password reset:", user);
+
+      const token = generateToken({
+        sub: user.id,
+        email: user.email,
+        name: `${user.firstname} ${user.lastname}`,
+      });
+
+      const createdAt = new Date().toISOString();
+      const expiresAt = new Date(Date.now() + 3600 * 1000).toISOString();
+
+      await requestPasswordReset(fastify.pg, {
+        email: email,
+        user_id: user.id,
+        client_id: user.client_id,
+        token: token,
+        expires_at: expiresAt,
+        created_at: createdAt,
+      });
+
+      return {
+        token,
+        user: {
+          id: user.id,
+          client_id: user.client_id,
+          email: user.email,
+          expires_at: expiresAt,
+          created_at: createdAt,
+        },
+      };
+    },
+  );
+
+  // POST /auth/reset-password — protected
+  fastify.post(
+    "/auth/reset-password",
+    {
+      schema: {
+        tags: ["Auth"],
+        summary: "Reset password",
+        description: "Allows a user to reset their password.",
+        body: {
+          type: "object",
+          required: ["email", "token", "new_password"],
+          properties: {
+            email: {type: "string", format: "email"},
+            token: {type: "string"},
+            new_password: {type: "string", minLength: 8, maxLength: 255},
+          },
+          additionalProperties: false,
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              token: {type: "string", description: "JWT bearer token"},
+              user: {
+                type: "object",
+                properties: {
+                  id: {type: "integer"},
+                  client_id: {type: "integer"},
+                  email: {type: "string", format: "email"},
+                  token: {type: "boolean"},
+                  expires_at: {type: "string", format: "date-time"},
+                  created_at: {type: "string", format: "date-time"},
+                },
+              },
+            },
+          },
+          401: {
+            type: "object",
+            properties: {
+              error: {
+                type: "object",
+                properties: {
+                  message: {type: "string"},
+                  statusCode: {type: "integer"},
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const {email, token, new_password} = request.body;
+      const genericError = {
+        error: {
+          message: "User does not exists or invalid token",
+          statusCode: 404,
+        },
+      };
+
+      const request_token = await findTokenByEmail(fastify.pg, email);
+      if (!request_token || request_token.token !== token) {
+        return reply.status(401).send(genericError);
+      }
+
+      console.log("User requested password reset:", request_token);
+
+      const credentials = await findCredentialsByUserId(
+        fastify.pg,
+        request_token.user_id,
+        "password",
+      );
+      const active = credentials.filter((c) => c.is_active);
+
+      let matchedCredential = null;
+      for (const cred of active) {
+        const row = await fastify.pg.query(
+          "SELECT credential_hash FROM user_credentials WHERE id = $1",
+          [cred.id],
+        );
+        if (
+          row.rows.length &&
+          (await verifyPassword(new_password, row.rows[0].credential_hash))
+        ) {
+          matchedCredential = cred;
+          break;
+        }
+      }
+
+      if (!matchedCredential) {
+        return reply.status(401).send(genericError);
+      }
+
+      console.log("Matched credential for password reset:", matchedCredential);
+
+      deactivateCredential(fastify.pg, matchedCredential.id).catch(() => {});
+
+      const hash = await hashPassword(new_password);
+      await createCredential(fastify.pg, {
+        userId: request_token.user_id,
+        credentialType: "password",
+        credentialHash: hash,
+        label: "password",
+      });
+
+      await deleteToken(fastify.pg, {
+        token: request_token.token,
+      });
+
+      return {
+        user: {
+          id: request_token.id,
+          client_id: request_token.client_id,
+          email: request_token.email,
+        },
+      };
     },
   );
 

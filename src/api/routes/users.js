@@ -378,11 +378,7 @@ async function userRoutes(fastify) {
       },
     },
     async (request, reply) => {
-      const deleted = await deleteUser(
-        fastify.pg,
-        request.params.client_id,
-        request.params.id,
-      );
+      const deleted = await deleteUser(fastify.pg, request.params.id);
 
       if (!deleted) {
         return reply.status(404).send({

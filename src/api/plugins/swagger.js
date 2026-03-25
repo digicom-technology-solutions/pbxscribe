@@ -26,6 +26,30 @@ async function swaggerPlugin(fastify) {
           name: "Payment Methods",
           description: "Payment methods CRUD operations",
         },
+        {
+          name: "Phone Numbers",
+          description: "Phone numbers CRUD operations",
+        },
+        {
+          name: "Logs",
+          description: "Logs CRUD operations",
+        },
+        {
+          name: "Invoices",
+          description: "Invoices CRUD operations",
+        },
+        {
+          name: "Subscription Plans",
+          description: "Subscription plans CRUD operations",
+        },
+        {
+          name: "Referrals",
+          description: "Referrals CRUD operations",
+        },
+        {
+          name: "Support Tickets",
+          description: "Support tickets CRUD operations",
+        },
       ],
       components: {
         securitySchemes: {

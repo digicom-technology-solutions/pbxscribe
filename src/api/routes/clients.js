@@ -6,15 +6,18 @@ const {
   updateClient,
   listClients,
   deleteClient,
+  findClientByReferralLink,
 } = require("../repositories/clientRepository");
+const {findPlanById} = require("../repositories/subscriptionPlanRepository");
+const crypto = require("crypto");
 
 const clientSchema = {
   type: "object",
   properties: {
     id: {type: "integer"},
     client_name: {type: "string"},
+    plan_id: {type: "integer"},
     client_category: {type: "string"},
-    subscription_plan: {type: "string"},
     client_email: {type: "string", format: "email"},
     client_address: {type: "string"},
     client_phone: {type: "string"},
@@ -23,8 +26,51 @@ const clientSchema = {
       enum: ["PKT", "GMT", "UTC", "EST", "CST", "MST", "PST"],
     },
     client_status: {type: "string", enum: ["active", "inactive", "suspended"]},
+    client_referral_link: {type: "string"},
+    delivery_failure_notification: {type: "boolean"},
+    usage_alert_notification: {type: "boolean"},
+    system_alert_notification: {type: "boolean"},
+    referral_link: {type: "string"},
     created_at: {type: "string", format: "date-time"},
     updated_at: {type: "string", format: "date-time"},
+    referredby_client: {
+      type: "object",
+      properties: {
+        id: {type: "integer"},
+        client_name: {type: "string"},
+        plan_id: {type: "integer"},
+        client_category: {type: "string"},
+        client_email: {type: "string", format: "email"},
+        client_address: {type: "string"},
+        client_phone: {type: "string"},
+        timezone: {
+          type: "string",
+          enum: ["PKT", "GMT", "UTC", "EST", "CST", "MST", "PST"],
+        },
+        client_status: {
+          type: "string",
+          enum: ["active", "inactive", "suspended"],
+        },
+        client_referral_link: {type: "string"},
+        created_at: {type: "string", format: "date-time"},
+        updated_at: {type: "string", format: "date-time"},
+      },
+    },
+    subscription_plan: {
+      type: "object",
+      properties: {
+        plan_id: {type: "integer"},
+        plan_name: {type: "string"},
+        plan_type: {type: "string"},
+        plan_monthly_amount: {type: "number"},
+        plan_yearly_amount: {type: "number"},
+        plan_voicemails: {type: "number"},
+        plan_email_delivery: {type: "boolean"},
+        plan_sms_delivery: {type: "boolean"},
+        plan_voicebox: {type: "boolean"},
+        plan_support: {type: "boolean"},
+      },
+    },
   },
 };
 
@@ -47,13 +93,13 @@ async function clientRoutes(fastify) {
           type: "object",
           required: [
             "client_name",
+            "plan_id",
             "client_category",
-            "subscription_plan",
             "client_email",
           ],
           properties: {
             client_name: {type: "string", minLength: 1, maxLength: 255},
-            subscription_plan: {type: "string", minLength: 1, maxLength: 255},
+            plan_id: {type: "integer"},
             client_category: {type: "string", minLength: 3, maxLength: 255},
             client_email: {type: "string", format: "email"},
             client_phone: {type: "string", minLength: 10, maxLength: 15},
@@ -66,6 +112,10 @@ async function clientRoutes(fastify) {
               type: "string",
               enum: ["active", "inactive", "suspended"],
             },
+            referral_link: {type: "string"},
+            delivery_failure_notification: {type: "boolean"},
+            usage_alert_notification: {type: "boolean"},
+            system_alert_notification: {type: "boolean"},
           },
           additionalProperties: false,
         },
@@ -77,28 +127,66 @@ async function clientRoutes(fastify) {
     async (request, reply) => {
       const {
         client_name,
+        plan_id,
         client_category,
-        subscription_plan,
         client_email,
         client_address,
         client_phone,
         timezone,
         client_status,
+        referral_link,
+        delivery_failure_notification,
+        usage_alert_notification,
+        system_alert_notification,
       } = request.body;
 
       try {
+        const client_referral_link = `https://${process.env.PBXSCRIBE_DOMAIN || "pbxscribe.com"}/referral/${crypto.randomUUID() || "31236f14-1544-45c2-86ec-d5198d57070e"}`;
         const client = await createClient(fastify.pg, {
           client_name,
+          plan_id,
           client_category,
-          subscription_plan,
           client_email,
           client_address,
           client_phone,
           timezone,
           client_status,
+          client_referral_link,
+          delivery_failure_notification,
+          usage_alert_notification,
+          system_alert_notification,
         });
 
-        return reply.status(201).send(client);
+        let referredby_client = null;
+        if (referral_link) {
+          referredby_client = await findClientByReferralLink(
+            fastify.pg,
+            referral_link,
+          );
+        }
+
+        const subscriptionPlan = await findPlanById(fastify.pg, client.plan_id);
+
+        return reply.status(201).send({
+          id: client.id,
+          client_name: client.client_name,
+          plan_id: client.plan_id,
+          client_category: client.client_category,
+          client_email: client.client_email,
+          client_address: client.client_address,
+          client_phone: client.client_phone,
+          timezone: client.timezone,
+          client_status: client.client_status,
+          client_referral_link: client.client_referral_link,
+          referral_link: referral_link || null,
+          delivery_failure_notification: client.delivery_failure_notification,
+          usage_alert_notification: client.usage_alert_notification,
+          system_alert_notification: client.system_alert_notification,
+          created_at: client.created_at,
+          updated_at: client.updated_at,
+          referredby_client: referredby_client,
+          subscription_plan: subscriptionPlan,
+        });
       } catch (error) {
         if (error.code === "23505") {
           return reply.status(409).send({
@@ -154,6 +242,13 @@ async function clientRoutes(fastify) {
         status,
       });
 
+      for (const client of clients) {
+        client.subscription_plan = await findPlanById(
+          fastify.pg,
+          client.plan_id,
+        );
+      }
+
       return {clients, total, limit, offset};
     },
   );
@@ -190,6 +285,8 @@ async function clientRoutes(fastify) {
           },
         });
       }
+
+      client.subscription_plan = await findPlanById(fastify.pg, client.plan_id);
 
       return client;
     },
@@ -228,6 +325,8 @@ async function clientRoutes(fastify) {
         });
       }
 
+      client.subscription_plan = await findPlanById(fastify.pg, client.plan_id);
+
       return client;
     },
   );
@@ -253,8 +352,7 @@ async function clientRoutes(fastify) {
           type: "object",
           properties: {
             client_name: {type: "string", minLength: 1, maxLength: 255},
-            subscription_plan: {type: "string", minLength: 1, maxLength: 255},
-            client_category: {type: "string", minLength: 3, maxLength: 255},
+            plan_id: {type: "integer"},
             client_email: {type: "string", format: "email"},
             client_phone: {type: "string", minLength: 10, maxLength: 15},
             client_address: {type: "string", minLength: 3, maxLength: 255},
@@ -266,6 +364,9 @@ async function clientRoutes(fastify) {
               type: "string",
               enum: ["active", "inactive", "suspended"],
             },
+            delivery_failure_notification: {type: "boolean"},
+            usage_alert_notification: {type: "boolean"},
+            system_alert_notification: {type: "boolean"},
           },
           additionalProperties: false,
           minProperties: 1,
@@ -282,14 +383,7 @@ async function clientRoutes(fastify) {
         request.body,
       );
 
-      if (!client) {
-        return reply.status(404).send({
-          error: {
-            message: "Client not found",
-            statusCode: 404,
-          },
-        });
-      }
+      client.subscription_plan = await findPlanById(fastify.pg, client.plan_id);
 
       return client;
     },
