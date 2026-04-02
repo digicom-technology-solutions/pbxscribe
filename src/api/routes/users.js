@@ -29,6 +29,7 @@ const userSchema = {
     user_role: {type: "string", enum: ["owner", "manager", "viewer"]},
     user_status: {type: "string", enum: ["enabled", "disabled"]},
     two_fa_enabled: {type: "boolean"},
+    two_fa_secret: {type: "string"},
     created_at: {type: "string", format: "date-time"},
     updated_at: {type: "string", format: "date-time"},
   },
@@ -55,7 +56,6 @@ async function userRoutes(fastify) {
           properties: {
             client_id: {type: "integer"},
             email: {type: "string", format: "email"},
-            pbx_email: {type: "string", format: "email"},
             firstname: {type: "string", minLength: 1, maxLength: 255},
             lastname: {type: "string", minLength: 1, maxLength: 255},
             password: {type: "string", minLength: 8, maxLength: 255},
@@ -77,6 +77,7 @@ async function userRoutes(fastify) {
               type: "string",
               enum: ["owner", "manager", "viewer"],
             },
+            two_fa_enabled: {type: "boolean"},
           },
           additionalProperties: false,
         },

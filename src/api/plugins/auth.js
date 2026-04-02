@@ -70,7 +70,6 @@ async function authPlugin(fastify) {
         });
       }
 
-      // Fire-and-forget — tracking failure must not block the request
       updateLastUsed(fastify.pg, result.credential.id).catch(() => {});
 
       request.user = result.user;

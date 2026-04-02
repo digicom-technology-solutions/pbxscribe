@@ -53,7 +53,7 @@ async function createUser(
  */
 async function findUserById(pool, id) {
   const result = await pool.query(
-    `SELECT id, client_id, email, pbx_email, firstname, lastname, phone, sms_notification, timezone, user_type, user_role, user_status, two_fa_enabled, created_at, updated_at
+    `SELECT id, client_id, email, pbx_email, firstname, lastname, phone, sms_notification, timezone, user_type, user_role, user_status, two_fa_enabled, two_fa_secret, created_at, updated_at
      FROM users
      WHERE id = $1`,
     [id],
@@ -69,7 +69,7 @@ async function findUserById(pool, id) {
  */
 async function findUserByEmail(pool, email) {
   const result = await pool.query(
-    `SELECT id, client_id, email, pbx_email, firstname, lastname, phone, sms_notification, timezone, user_type, user_role, user_status, two_fa_enabled, created_at, updated_at
+    `SELECT id, client_id, email, pbx_email, firstname, lastname, phone, sms_notification, timezone, user_type, user_role, user_status, two_fa_enabled, two_fa_secret, created_at, updated_at
      FROM users
      WHERE email = $1`,
     [email],
@@ -81,7 +81,7 @@ async function findUserByEmail(pool, email) {
  * Update a user (partial updates supported)
  * @param {Pool} pool
  * @param {string} id - UUID
- * @param {{ firstname?: string, lastname?: string, phone?: string, sms_notification?: boolean, timezone?: string, user_status?: string, user_role?: string }} fields - Fields to update
+ * @param {{ firstname?: string, lastname?: string, phone?: string, sms_notification?: boolean, timezone?: string, user_status?: string, user_role?: string, two_fa_enabled?: boolean, two_fa_secret?: string }} fields - Fields to update
  * @returns {Promise<Object|null>} Updated user row, or null if not found
  */
 async function updateUser(pool, id, fields) {
@@ -94,6 +94,7 @@ async function updateUser(pool, id, fields) {
     "user_status",
     "user_role",
     "two_fa_enabled",
+    "two_fa_secret",
   ];
   const updates = [];
   const values = [];
@@ -116,7 +117,7 @@ async function updateUser(pool, id, fields) {
     `UPDATE users
      SET ${updates.join(", ")}
      WHERE id = $${values.length}
-     RETURNING id, client_id, email, pbx_email, firstname, lastname, phone, sms_notification, timezone, user_type, user_role, user_status, two_fa_enabled, created_at, updated_at`,
+     RETURNING id, client_id, email, pbx_email, firstname, lastname, phone, sms_notification, timezone, user_type, user_role, user_status, two_fa_enabled, two_fa_secret, created_at, updated_at`,
     values,
   );
   return result.rows[0] || null;
@@ -148,7 +149,7 @@ async function listUsers(
   // Run data query and count query in parallel
   const [dataResult, countResult] = await Promise.all([
     pool.query(
-      `SELECT id, client_id, email, pbx_email, firstname, lastname, phone, sms_notification, timezone, user_type, user_role, user_status, two_fa_enabled, created_at, updated_at
+      `SELECT id, client_id, email, pbx_email, firstname, lastname, phone, sms_notification, timezone, user_type, user_role, user_status, two_fa_enabled, two_fa_secret, created_at, updated_at
        FROM users
        ${where}
        ORDER BY created_at DESC

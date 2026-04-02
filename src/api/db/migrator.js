@@ -93,6 +93,7 @@ async function runMigration(client, filename) {
  */
 async function dropAllTables(client) {
   await client.query(`
+	DROP TABLE IF EXISTS two_fa CASCADE;
 	DROP TABLE IF EXISTS ticket_messages CASCADE;
 	DROP TABLE IF EXISTS support_tickets CASCADE;
 	DROP TABLE IF EXISTS referrals CASCADE;

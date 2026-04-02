@@ -15,6 +15,7 @@ CREATE TABLE users (
   user_role VARCHAR(20) NOT NULL DEFAULT 'viewer',
     CHECK (user_role IN ('viewer', 'manager', 'admin')),
   two_fa_enabled BOOLEAN NOT NULL DEFAULT false,
+  two_fa_secret VARCHAR(255),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT users_email_unique UNIQUE (email),

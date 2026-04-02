@@ -1,5 +1,9 @@
 // Auth routes
-const {createUser, findUserByEmail} = require("../repositories/userRepository");
+const {
+  createUser,
+  findUserByEmail,
+  updateUser,
+} = require("../repositories/userRepository");
 const {
   createCredential,
   findCredentialsByUserId,
@@ -11,6 +15,13 @@ const {
   findTokenByEmail,
   deleteToken,
 } = require("../repositories/passwordResetRepository");
+const {
+  createTwoFA,
+  sendText,
+  sendEmail,
+  twoFASetup,
+  twoFAVerify,
+} = require("../repositories/twoFARepository");
 const {
   hashPassword,
   verifyPassword,
@@ -281,6 +292,253 @@ async function authRoutes(fastify) {
     },
   );
 
+  // POST /auth/two-fa/send-code - protected
+  fastify.post(
+    "/auth/two-fa/send-code",
+    {
+      preHandler: [fastify.authenticate],
+      schema: {
+        tags: ["Auth"],
+        summary: "Send 2FA code",
+        description: "Sends a 2FA code to the user's email or phone.",
+        security: [{bearerAuth: []}, {apiKeyAuth: []}],
+        body: {
+          type: "object",
+          required: ["email"],
+          properties: {
+            email: {type: "string", format: "email"},
+          },
+          additionalProperties: false,
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              two_fa: {
+                type: "object",
+                properties: {
+                  id: {type: "integer"},
+                  client_id: {type: "integer"},
+                  user_id: {type: "integer"},
+                  two_fa: {type: "string"},
+                  email: {type: "string", format: "email"},
+                  phone: {type: "string", minLength: 10, maxLength: 15},
+                  created_at: {type: "string", format: "date-time"},
+                  updated_at: {type: "string", format: "date-time"},
+                },
+              },
+            },
+          },
+          401: {
+            type: "object",
+            properties: {
+              error: {
+                type: "object",
+                properties: {
+                  message: {type: "string"},
+                  statusCode: {type: "integer"},
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const {email} = request.body;
+      const genericError = {
+        error: {message: "Invalid credentials", statusCode: 401},
+      };
+
+      const user = await findUserByEmail(fastify.pg, email);
+      if (!user || user.user_status !== "enabled") {
+        return reply.status(401).send(genericError);
+      }
+
+      const twoFAEntry = await createTwoFA(fastify.pg, {
+        client_id: user.client_id,
+        user_id: user.id,
+        phone: user.phone,
+        email: user.email,
+      });
+      console.log("Created 2FA entry:", twoFAEntry);
+
+      try {
+        if (user.phone) {
+          await sendText(twoFAEntry.two_fa, user.phone);
+        }
+
+        await sendEmail(twoFAEntry.two_fa, user.email);
+      } catch (error) {
+        console.error(
+          "Error sending 2FA code via SMS or email:",
+          error.message,
+        );
+        return reply.status(500).send({
+          error: {
+            message: "Failed to send 2FA code via SMS or email",
+            statusCode: 500,
+          },
+        });
+      }
+
+      try {
+        await sendEmail(twoFAEntry.two_fa, user.email);
+      } catch (error) {
+        console.error("Error sending 2FA code via email:", error.message);
+      }
+
+      return {two_fa: twoFAEntry};
+    },
+  );
+
+  // POST /auth/two-fa/setup - protected
+  fastify.post(
+    "/auth/two-fa/setup",
+    {
+      preHandler: [fastify.authenticate],
+      schema: {
+        tags: ["Auth"],
+        summary: "Set up 2FA",
+        description: "Sets up a new 2FA secret and QR code for the user.",
+        security: [{bearerAuth: []}, {apiKeyAuth: []}],
+        body: {
+          type: "object",
+          required: ["email"],
+          properties: {
+            email: {type: "string", format: "email"},
+          },
+          additionalProperties: false,
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              two_fa: {
+                type: "object",
+                properties: {
+                  secret: {type: "string"},
+                  qrCodeUrl: {type: "string", format: "uri"},
+                },
+              },
+            },
+          },
+          401: {
+            type: "object",
+            properties: {
+              error: {
+                type: "object",
+                properties: {
+                  message: {type: "string"},
+                  statusCode: {type: "integer"},
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const {email} = request.body;
+      const genericError = {
+        error: {message: "Invalid email", statusCode: 401},
+      };
+
+      const user = await findUserByEmail(fastify.pg, email);
+      if (!user || user.user_status !== "enabled") {
+        return reply.status(401).send(genericError);
+      }
+
+      const twoFASetupResult = await twoFASetup(user.email);
+      console.log("Created 2FA entry:", twoFASetupResult);
+
+      return {two_fa: twoFASetupResult};
+    },
+  );
+
+  // POST /auth/two-fa/verify - protected
+  fastify.post(
+    "/auth/two-fa/verify",
+    {
+      preHandler: [fastify.authenticate],
+      schema: {
+        tags: ["Auth"],
+        summary: "Verify 2FA",
+        description: "Verifies a 2FA token for the user.",
+        security: [{bearerAuth: []}, {apiKeyAuth: []}],
+        body: {
+          type: "object",
+          required: ["email", "token"],
+          properties: {
+            email: {type: "string", format: "email"},
+            token: {type: "string"},
+            secret: {type: "string"},
+          },
+          additionalProperties: false,
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              two_fa: {
+                type: "object",
+                properties: {
+                  result: {type: "boolean"},
+                },
+              },
+            },
+          },
+          401: {
+            type: "object",
+            properties: {
+              error: {
+                type: "object",
+                properties: {
+                  message: {type: "string"},
+                  statusCode: {type: "integer"},
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const {email, token, secret} = request.body;
+
+      const user = await findUserByEmail(fastify.pg, email);
+
+      if (!user || user.user_status !== "enabled") {
+        return reply.code(400).send({
+          error: {message: "Invalid user or account disabled", statusCode: 400},
+        });
+      }
+
+      const activeSecret = secret ? secret : user.two_fa_secret;
+
+      if (!activeSecret) {
+        return reply.code(400).send({
+          error: {message: "User is not setup for 2FA", statusCode: 400},
+        });
+      }
+
+      const isValid = await twoFAVerify(token, activeSecret);
+
+      if (!isValid) {
+        return {two_fa: {result: false}};
+      }
+
+      if (secret) {
+        await updateUser(fastify.pg, user.id, {
+          two_fa_secret: secret,
+          two_fa_enabled: true,
+        });
+      }
+
+      return {two_fa: {result: true}};
+    },
+  );
+
   // POST /auth/request-reset-password — protected
   fastify.post(
     "/auth/request-reset-password",
@@ -289,6 +547,7 @@ async function authRoutes(fastify) {
         tags: ["Auth"],
         summary: "Request password reset",
         description: "Allows a user to request a password reset.",
+        security: [{bearerAuth: []}, {apiKeyAuth: []}],
         body: {
           type: "object",
           required: ["email"],
@@ -382,6 +641,7 @@ async function authRoutes(fastify) {
         tags: ["Auth"],
         summary: "Reset password",
         description: "Allows a user to reset their password.",
+        security: [{bearerAuth: []}, {apiKeyAuth: []}],
         body: {
           type: "object",
           required: ["email", "token", "new_password"],
@@ -501,6 +761,7 @@ async function authRoutes(fastify) {
         tags: ["Auth"],
         summary: "Change user password",
         description: "Allows a user to change their password.",
+        security: [{bearerAuth: []}, {apiKeyAuth: []}],
         body: {
           type: "object",
           required: ["email", "password", "new_password"],

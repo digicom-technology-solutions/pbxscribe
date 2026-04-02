@@ -91,6 +91,16 @@ Parameters:
     NoEcho: true
     Description: Twilio Auth Token for SMS integration (https://www.twilio.com/console)
 
+  TwilioPhoneNumberDefault:
+    Type: String
+    NoEcho: true
+    Description: Default Twilio phone number for SMS integration (https://www.twilio.com/console)
+
+  SesFromEmail:
+    Type: String
+    NoEcho: true
+    Description: Verified SES email address for sending emails (https://console.aws.amazon.com/ses/)
+
 Conditions:
   IsProduction: !Equals [!Ref Environment, "prod"]
 
@@ -136,6 +146,30 @@ Resources:
       Description: "PostgreSQL access from Lambda functions"
 
   # =============================================================================
+  # S3 Bucket for Assets/Storage
+  # =============================================================================
+  EmailS3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "${ProjectName}-${Environment}-email"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${Environment}-storage"
+        - Key: Environment
+          Value: !Ref Environment
+
+  # =============================================================================
   # Lambda Execution Role
   # =============================================================================
   LambdaExecutionRole:
@@ -171,6 +205,28 @@ Resources:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-${Environment}-*"
+        - PolicyName: LambdaSESPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ses:SendEmail
+                  - ses:SendRawEmail
+                Resource: "*"
+        - PolicyName: LambdaS3Policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:DeleteObject
+                Resource:
+                  - !GetAtt EmailS3Bucket.Arn
+                  - !Sub "${EmailS3Bucket.Arn}/*"
       Tags:
         - Key: Name
           Value: !Sub "${ProjectName}-${Environment}-lambda-role"
@@ -215,6 +271,8 @@ Resources:
           PBXSCRIBE_DOMAIN: !Ref PbxscribeDomain
           TWILIO_ACCOUNT_SID: !Ref TwilioAccountSid
           TWILIO_AUTH_TOKEN: !Ref TwilioAuthToken
+          TWILIO_PHONENUMBER_DEFAULT: !Ref TwilioPhoneNumberDefault
+          SES_FROM_EMAIL: !Ref SesFromEmail
       Code:
         ZipFile: |
           // Placeholder Lambda function
@@ -409,3 +467,9 @@ Outputs:
   MigrationSecretParameterName:
     Description: SSM Parameter name for Migration secret
     Value: !Ref MigrationSecretParameter
+
+  EmailS3BucketName:
+    Description: Name of the S3 bucket for email storage
+    Value: !Ref EmailS3Bucket
+    Export:
+      Name: !Sub "${ProjectName}-${Environment}-email"
