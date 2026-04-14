@@ -101,6 +101,21 @@ Parameters:
     NoEcho: true
     Description: Verified SES email address for sending emails (https://console.aws.amazon.com/ses/)
 
+  StripeSecretKey:
+    Type: String
+    NoEcho: true
+    Description: Verified SES email address for sending emails (https://console.aws.amazon.com/ses/)
+
+  TestEmail:
+    Type: String
+    NoEcho: true
+    Description: Email address for testing purposes (e.g. receiving test emails from the processor Lambda)
+
+  DefaultToEmail:
+    Type: String
+    NoEcho: true
+    Description: Default recipient email address for processor Lambda (used when no user email is available)
+
 Conditions:
   IsProduction: !Equals [!Ref Environment, "prod"]
 
@@ -165,9 +180,46 @@ Resources:
               SSEAlgorithm: AES256
       Tags:
         - Key: Name
-          Value: !Sub "${ProjectName}-${Environment}-storage"
+          Value: !Sub "${ProjectName}-${Environment}-email"
         - Key: Environment
           Value: !Ref Environment
+
+  TranscriptionS3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "${ProjectName}-${Environment}-transcription"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${Environment}-transcription"
+        - Key: Environment
+          Value: !Ref Environment
+
+  # =============================================================================
+  # S3 Bucket Policy for SES
+  # =============================================================================
+  EmailS3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref EmailS3Bucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ses.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub "${EmailS3Bucket.Arn}/*"
 
   # =============================================================================
   # Lambda Execution Role
@@ -214,6 +266,15 @@ Resources:
                   - ses:SendEmail
                   - ses:SendRawEmail
                 Resource: "*"
+        - PolicyName: LambdaTranscribePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - transcribe:StartTranscriptionJob
+                  - transcribe:GetTranscriptionJob
+                Resource: "*"
         - PolicyName: LambdaS3Policy
           PolicyDocument:
             Version: "2012-10-17"
@@ -227,6 +288,8 @@ Resources:
                 Resource:
                   - !GetAtt EmailS3Bucket.Arn
                   - !Sub "${EmailS3Bucket.Arn}/*"
+                  - !GetAtt TranscriptionS3Bucket.Arn
+                  - !Sub "${TranscriptionS3Bucket.Arn}/*"
       Tags:
         - Key: Name
           Value: !Sub "${ProjectName}-${Environment}-lambda-role"
@@ -273,6 +336,7 @@ Resources:
           TWILIO_AUTH_TOKEN: !Ref TwilioAuthToken
           TWILIO_PHONENUMBER_DEFAULT: !Ref TwilioPhoneNumberDefault
           SES_FROM_EMAIL: !Ref SesFromEmail
+          STRIPE_SECRET_KEY: !Ref StripeSecretKey
       Code:
         ZipFile: |
           // Placeholder Lambda function
@@ -297,6 +361,197 @@ Resources:
           Value: !Sub "${ProjectName}-${Environment}-api"
         - Key: Environment
           Value: !Ref Environment
+
+  InboundParserFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${ProjectName}-${Environment}-inbound-parser"
+      Description: !Sub "Inbound parser function for ${ProjectName} ${Environment}"
+      Runtime: !Ref LambdaRuntime
+      Handler: index.mjs.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      MemorySize: !Ref LambdaMemorySize
+      Timeout: !Ref LambdaTimeout
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - Fn::ImportValue: !Sub "${ProjectName}-${Environment}-app-subnet-1"
+          - Fn::ImportValue: !Sub "${ProjectName}-${Environment}-app-subnet-2"
+          - Fn::ImportValue: !Sub "${ProjectName}-${Environment}-app-subnet-3"
+      Environment:
+        Variables:
+          REGION: !Sub ${AWS::Region}
+          VOICEMAILS_PREFIX: voicemails
+          DB_HOST:
+            Fn::ImportValue: !Sub "${ProjectName}-${Environment}-db-proxy-endpoint"
+          DB_PORT:
+            Fn::ImportValue: !Sub "${ProjectName}-${Environment}-db-port"
+          DB_NAME:
+            Fn::ImportValue: !Sub "${ProjectName}-${Environment}-db-name"
+          DB_SECRET_ARN:
+            Fn::ImportValue: !Sub "${ProjectName}-${Environment}-db-secret-arn"
+      Code:
+        ZipFile: |
+          // Placeholder Lambda function for inbound email parsing
+          exports.handler = async (event) => {
+              console.log('Inbound email event:', JSON.stringify(event, null, 2));
+          };
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${Environment}-inbound-parser"
+        - Key: Environment
+          Value: !Ref Environment
+
+  InitFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${ProjectName}-${Environment}-init"
+      Description: !Sub "Init function for ${ProjectName} ${Environment}"
+      Runtime: !Ref LambdaRuntime
+      Handler: index.mjs.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      MemorySize: !Ref LambdaMemorySize
+      Timeout: !Ref LambdaTimeout
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - Fn::ImportValue: !Sub "${ProjectName}-${Environment}-app-subnet-1"
+          - Fn::ImportValue: !Sub "${ProjectName}-${Environment}-app-subnet-2"
+          - Fn::ImportValue: !Sub "${ProjectName}-${Environment}-app-subnet-3"
+      Environment:
+        Variables:
+          REGION: !Sub ${AWS::Region}
+          TRANSCRIPTION_BUCKET: !Ref TranscriptionS3Bucket
+          DB_HOST:
+            Fn::ImportValue: !Sub "${ProjectName}-${Environment}-db-proxy-endpoint"
+          DB_PORT:
+            Fn::ImportValue: !Sub "${ProjectName}-${Environment}-db-port"
+          DB_NAME:
+            Fn::ImportValue: !Sub "${ProjectName}-${Environment}-db-name"
+          DB_SECRET_ARN:
+            Fn::ImportValue: !Sub "${ProjectName}-${Environment}-db-secret-arn"
+      Code:
+        ZipFile: |
+          // Placeholder Lambda function for initialization
+          exports.handler = async (event) => {
+              console.log('Init event:', JSON.stringify(event, null, 2));
+          };
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${Environment}-init"
+        - Key: Environment
+          Value: !Ref Environment
+
+  ProcessorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${ProjectName}-${Environment}-processor"
+      Description: !Sub "Processor function for ${ProjectName} ${Environment}"
+      Runtime: !Ref LambdaRuntime
+      Handler: index.mjs.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      MemorySize: !Ref LambdaMemorySize
+      Timeout: !Ref LambdaTimeout
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - Fn::ImportValue: !Sub "${ProjectName}-${Environment}-app-subnet-1"
+          - Fn::ImportValue: !Sub "${ProjectName}-${Environment}-app-subnet-2"
+          - Fn::ImportValue: !Sub "${ProjectName}-${Environment}-app-subnet-3"
+      Environment:
+        Variables:
+          REGION: !Sub ${AWS::Region}
+          TRANSCRIPTION_BUCKET: !Ref TranscriptionS3Bucket
+          VOICEMAIL_BUCKET: !Ref EmailS3Bucket
+          VOICEMAIL_PREFIX: voicemails
+          TEST_EMAIL: !Ref TestEmail
+          DEFAULT_TO_EMAIL: !Ref DefaultToEmail
+          FROM_EMAIL: !Ref SesFromEmail
+          DB_HOST:
+            Fn::ImportValue: !Sub "${ProjectName}-${Environment}-db-proxy-endpoint"
+          DB_PORT:
+            Fn::ImportValue: !Sub "${ProjectName}-${Environment}-db-port"
+          DB_NAME:
+            Fn::ImportValue: !Sub "${ProjectName}-${Environment}-db-name"
+          DB_SECRET_ARN:
+            Fn::ImportValue: !Sub "${ProjectName}-${Environment}-db-secret-arn"
+          TWILIO_ACCOUNT_SID: !Ref TwilioAccountSid
+          TWILIO_AUTH_TOKEN: !Ref TwilioAuthToken
+          TWILIO_PHONENUMBER_DEFAULT: !Ref TwilioPhoneNumberDefault
+      Code:
+        ZipFile: |
+          // Placeholder Lambda function for processor
+          exports.handler = async (event) => {
+              console.log('Processor event:', JSON.stringify(event, null, 2));
+          };
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${Environment}-processor"
+        - Key: Environment
+          Value: !Ref Environment
+
+  WebhookFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${ProjectName}-${Environment}-webhook"
+      Description: !Sub "Webhook function for ${ProjectName} ${Environment}"
+      Runtime: !Ref LambdaRuntime
+      Handler: index.mjs.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      MemorySize: !Ref LambdaMemorySize
+      Timeout: !Ref LambdaTimeout
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - Fn::ImportValue: !Sub "${ProjectName}-${Environment}-app-subnet-1"
+          - Fn::ImportValue: !Sub "${ProjectName}-${Environment}-app-subnet-2"
+          - Fn::ImportValue: !Sub "${ProjectName}-${Environment}-app-subnet-3"
+      Environment:
+        Variables:
+          REGION: !Sub ${AWS::Region}
+          DB_HOST:
+            Fn::ImportValue: !Sub "${ProjectName}-${Environment}-db-proxy-endpoint"
+          DB_PORT:
+            Fn::ImportValue: !Sub "${ProjectName}-${Environment}-db-port"
+          DB_NAME:
+            Fn::ImportValue: !Sub "${ProjectName}-${Environment}-db-name"
+          DB_SECRET_ARN:
+            Fn::ImportValue: !Sub "${ProjectName}-${Environment}-db-secret-arn"
+      Code:
+        ZipFile: |
+          // Placeholder Lambda function for webhook
+          exports.handler = async (event) => {
+              console.log('Webhook event:', JSON.stringify(event, null, 2));
+          };
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${Environment}-webhook"
+        - Key: Environment
+          Value: !Ref Environment
+
+  EmailNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${ProjectName}-${Environment}-email-notifications"
+
+  EmailNotificationSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref EmailNotificationTopic
+      Endpoint: !GetAtt WebhookFunction.Arn
+      Protocol: lambda
+
+  AllowSnsToInvokeLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !GetAtt WebhookFunction.Arn
+      Principal: "sns.amazonaws.com"
+      SourceArn: !Ref EmailNotificationTopic
 
   # =============================================================================
   # SSM Parameter Store — Application Secrets
@@ -339,6 +594,36 @@ Resources:
           Value: !Sub "${ProjectName}-${Environment}-api-logs"
         - Key: Environment
           Value: !Ref Environment
+
+  # =============================================================================
+  # Event Bridge Rule for Transcription Job Completion
+  # =============================================================================
+  ProcessTranscriptionEventBridge:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: This rule triggers a Lambda function to process transcription
+      EventBusName: default
+      Name: !Sub "${ProjectName}-${Environment}-transcription-completion"
+      EventPattern:
+        source:
+          - "aws.transcribe"
+        detail-type:
+          - "Transcribe Job State Change"
+        detail:
+          TranscriptionJobStatus:
+            - "COMPLETED"
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt ProcessorFunction.Arn
+          Id: ProcessTranscriptionJob
+
+  PermissionForEventsToInvokeProcessTranscriptionLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ProcessorFunction
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: !GetAtt ProcessTranscriptionEventBridge.Arn
 
   # =============================================================================
   # API Gateway HTTP API

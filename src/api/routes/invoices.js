@@ -1,119 +1,98 @@
 // User CRUD routes
 const {
-  createInvoice,
   findInvoiceById,
-  findInvoiceByName,
-  updateInvoice,
   listInvoices,
-  deleteInvoice,
 } = require("../repositories/invoiceRepository");
+const {findClientById} = require("../repositories/clientRepository");
 
 const invoiceSchema = {
   type: "object",
   properties: {
-    id: {type: "integer"},
-    client_id: {type: "integer"},
-    invoice_name: {type: "string"},
-    invoice_type: {type: "string", enum: ["monthly", "promotion", "yearly"]},
-    invoice_date: {type: "string"},
-    plan_id: {type: "integer"},
-    invoice_amount: {type: "number"},
-    invoice_status: {type: "string", enum: ["pending", "paid", "overdue"]},
-    invoice_file_url: {type: "string"},
-    created_at: {type: "string", format: "date-time"},
-    updated_at: {type: "string", format: "date-time"},
+    id: {type: "string"},
+    object: {type: "string", enum: ["invoice"]},
+    account_country: {type: "string"},
+    account_name: {type: "string"},
+    account_tax_ids: {type: ["null", "array"]},
+    amount_due: {type: "number"},
+    amount_overpaid: {type: "number"},
+    amount_paid: {type: "number"},
+    amount_remaining: {type: "number"},
+    amount_shipping: {type: "number"},
+    application: {type: ["null", "string"]},
+    attempt_count: {type: "number"},
+    attempted: {type: "boolean"},
+    auto_advance: {type: "boolean"},
+    automatic_tax: {type: "object"},
+    automatically_finalizes_at: {type: ["null", "string"]},
+    billing_reason: {type: "string"},
+    collection_method: {type: "string"},
+    created: {type: "number"},
+    currency: {type: "string"},
+    custom_fields: {type: ["null", "array"]},
+    customer: {type: "string"},
+    customer_account: {type: ["null", "string"]},
+    customer_address: {type: ["null", "object"]},
+    customer_email: {type: ["null", "string"]},
+    customer_name: {type: ["null", "string"]},
+    customer_phone: {type: ["null", "string"]},
+    customer_shipping: {type: ["null", "object"]},
+    customer_tax_exempt: {type: ["null", "string"]},
+    customer_tax_ids: {type: ["null", "array"]},
+    default_payment_method: {type: ["null", "string"]},
+    default_source: {type: ["null", "string"]},
+    default_tax_rates: {type: ["null", "array"]},
+    description: {type: ["null", "string"]},
+    discounts: {type: ["null", "array"]},
+    due_date: {type: ["null", "number"]},
+    effective_at: {type: ["null", "number"]},
+    ending_balance: {type: ["null", "number"]},
+    footer: {type: ["null", "string"]},
+    from_invoice: {type: ["null", "string"]},
+    hosted_invoice_url: {type: ["null", "string"]},
+    invoice_pdf: {type: ["null", "string"]},
+    issuer: {type: ["null", "object"]},
+    last_finalization_error: {type: ["null", "object"]},
+    latest_revision: {type: ["null", "object"]},
+    lines: {type: ["null", "object"]},
+    livemode: {type: "boolean"},
+    metadata: {type: "object"},
+    next_payment_attempt: {type: ["null", "number"]},
+    number: {type: ["null", "string"]},
+    on_behalf_of: {type: ["null", "string"]},
+    parent: {type: ["null", "object"]},
+    payment_settings: {type: ["null", "object"]},
+    period_end: {type: ["null", "number"]},
+    period_start: {type: ["null", "number"]},
+    post_payment_credit_notes_amount: {type: ["null", "number"]},
+    pre_payment_credit_notes_amount: {type: ["null", "number"]},
+    receipt_number: {type: ["null", "string"]},
+    rendering: {type: ["null", "object"]},
+    shipping_cost: {type: ["null", "object"]},
+    shipping_details: {type: ["null", "object"]},
+    starting_balance: {type: ["null", "number"]},
+    statement_descriptor: {type: ["null", "string"]},
+    status: {
+      type: "string",
+      enum: ["draft", "open", "paid", "uncollectible", "void"],
+    },
+    status_transitions: {type: ["null", "object"]},
+    subtotal: {type: ["null", "number"]},
+    subtotal_excluding_tax: {type: ["null", "number"]},
+    test_clock: {type: ["null", "string"]},
+    total: {type: ["null", "number"]},
+    total_discount_amounts: {type: ["null", "array"]},
+    total_excluding_tax: {type: ["null", "number"]},
+    total_pretax_credit_amounts: {type: ["null", "array"]},
+    total_taxes: {type: ["null", "array"]},
+    webhooks_delivered_at: {type: ["null", "number"]},
   },
 };
 
 /**
- * Register user CRUD routes
+ * Register invoice CRUD routes
  * @param {FastifyInstance} fastify - Fastify instance
  */
 async function invoiceRoutes(fastify) {
-  // POST /invoices — create invoice
-  fastify.post(
-    "/invoices",
-    {
-      preHandler: [fastify.authenticate],
-      schema: {
-        tags: ["Invoices"],
-        summary: "Create an invoice",
-        description: "Creates a new invoice record. Requires authentication.",
-        security: [{bearerAuth: []}, {apiKeyAuth: []}],
-        body: {
-          type: "object",
-          required: [
-            "client_id",
-            "invoice_name",
-            "invoice_type",
-            "invoice_date",
-            "plan_id",
-            "invoice_amount",
-          ],
-          properties: {
-            client_id: {type: "integer"},
-            invoice_name: {type: "string"},
-            invoice_type: {
-              type: "string",
-              enum: ["monthly", "promotion", "yearly"],
-            },
-            invoice_date: {type: "string", format: "date-time"},
-            plan_id: {type: "integer"},
-            invoice_amount: {type: "number"},
-            invoice_status: {
-              type: "string",
-              enum: ["pending", "paid", "overdue"],
-            },
-            invoice_file_url: {type: "string"},
-            created_at: {type: "string", format: "date-time"},
-            updated_at: {type: "string", format: "date-time"},
-          },
-          additionalProperties: false,
-        },
-        response: {
-          201: invoiceSchema,
-        },
-      },
-    },
-    async (request, reply) => {
-      const {
-        client_id,
-        invoice_name,
-        invoice_type,
-        invoice_date,
-        plan_id,
-        invoice_amount,
-        invoice_status,
-        invoice_file_url,
-      } = request.body;
-
-      try {
-        const invoice = await createInvoice(fastify.pg, {
-          client_id,
-          invoice_name,
-          invoice_type,
-          invoice_date,
-          plan_id,
-          invoice_amount,
-          invoice_status: invoice_status || "pending",
-          invoice_file_url: invoice_file_url || null,
-        });
-
-        return reply.status(201).send(invoice);
-      } catch (error) {
-        if (error.code === "23505") {
-          return reply.status(409).send({
-            error: {
-              message: "An invoice with this name already exists",
-              statusCode: 409,
-            },
-          });
-        }
-        throw error;
-      }
-    },
-  );
-
   // GET /invoices/client/:client_id — list invoices
   fastify.get(
     "/invoices/client/:client_id",
@@ -136,8 +115,10 @@ async function invoiceRoutes(fastify) {
           type: "object",
           properties: {
             limit: {type: "integer", minimum: 1, maximum: 100, default: 20},
-            offset: {type: "integer", minimum: 0, default: 0},
-            status: {type: "string", enum: ["pending", "paid", "overdue"]},
+            status: {
+              type: "string",
+              enum: ["draft", "open", "paid", "uncollectible", "void"],
+            },
           },
           additionalProperties: false,
         },
@@ -148,25 +129,38 @@ async function invoiceRoutes(fastify) {
               invoices: {type: "array", items: invoiceSchema},
               total: {type: "integer"},
               limit: {type: "integer"},
-              offset: {type: "integer"},
             },
           },
         },
       },
     },
     async (request, reply) => {
-      const {limit, offset, status} = request.query;
-      const {invoices, total} = await listInvoices(
-        fastify.pg,
+      const {limit, status} = request.query;
+      console.log(
+        "Received request to list invoices for client_id:",
         request.params.client_id,
-        {
-          limit,
-          offset,
-          status,
-        },
+        "with query:",
+        request.query,
       );
+      const client = await findClientById(fastify.pg, request.params.client_id);
 
-      return {invoices, total, limit, offset};
+      console.log("Client found:", client);
+
+      if (!client) {
+        return reply.status(404).send({
+          error: {
+            message: "Client not found",
+            statusCode: 404,
+          },
+        });
+      }
+
+      const {invoices, total} = await listInvoices(client.stripe_customer_id, {
+        limit,
+        status,
+      });
+
+      return {invoices, total, limit};
     },
   );
 
@@ -205,136 +199,6 @@ async function invoiceRoutes(fastify) {
       }
 
       return invoice;
-    },
-  );
-
-  // GET /invoices/:name — get invoice by name
-  fastify.get(
-    "/invoices/name/:name",
-    {
-      preHandler: [fastify.authenticate],
-      schema: {
-        tags: ["Invoices"],
-        summary: "Get an invoice",
-        description: "Returns a single invoice by name.",
-        security: [{bearerAuth: []}, {apiKeyAuth: []}],
-        params: {
-          type: "object",
-          properties: {
-            name: {type: "string"},
-          },
-          required: ["name"],
-        },
-        response: {
-          200: invoiceSchema,
-        },
-      },
-    },
-    async (request, reply) => {
-      const invoice = await findInvoiceByName(fastify.pg, request.params.name);
-
-      if (!invoice) {
-        return reply.status(404).send({
-          error: {
-            message: "Invoice not found",
-            statusCode: 404,
-          },
-        });
-      }
-
-      return invoice;
-    },
-  );
-
-  // PUT /invoices/:id — update invoice
-  fastify.put(
-    "/invoices/id/:id",
-    {
-      preHandler: [fastify.authenticate],
-      schema: {
-        tags: ["Invoices"],
-        summary: "Update an invoice",
-        description: "Updates details of an existing invoice.",
-        security: [{bearerAuth: []}, {apiKeyAuth: []}],
-        params: {
-          type: "object",
-          properties: {
-            id: {type: "integer"},
-          },
-          required: ["id"],
-        },
-        body: {
-          type: "object",
-          properties: {
-            invoice_name: {type: "string", minLength: 1, maxLength: 255},
-            invoice_status: {type: "string", minLength: 1, maxLength: 255},
-            invoice_amount: {type: "number", minimum: 0},
-            invoice_type: {type: "string", minLength: 1, maxLength: 255},
-            invoice_date: {type: "string", format: "date-time"},
-          },
-          additionalProperties: false,
-          minProperties: 1,
-        },
-        response: {
-          200: invoiceSchema,
-        },
-      },
-    },
-    async (request, reply) => {
-      const invoice = await updateInvoice(
-        fastify.pg,
-        request.params.id,
-        request.body,
-      );
-
-      if (!invoice) {
-        return reply.status(404).send({
-          error: {
-            message: "Invoice not found",
-            statusCode: 404,
-          },
-        });
-      }
-
-      return invoice;
-    },
-  );
-
-  // DELETE /invoices/:id — delete invoice
-  fastify.delete(
-    "/invoices/id/:id",
-    {
-      preHandler: [fastify.authenticate],
-      schema: {
-        tags: ["Invoices"],
-        summary: "Delete an invoice",
-        description: "Permanently deletes an invoice record by ID.",
-        security: [{bearerAuth: []}, {apiKeyAuth: []}],
-        params: {
-          type: "object",
-          properties: {
-            id: {type: "integer"},
-          },
-          required: ["id"],
-        },
-        response: {
-          204: {type: "null"},
-        },
-      },
-    },
-    async (request, reply) => {
-      const deleted = await deleteInvoice(fastify.pg, request.params.id);
-
-      if (!deleted) {
-        return reply.status(404).send({
-          error: {
-            message: "Invoice not found",
-            statusCode: 404,
-          },
-        });
-      }
-
-      return reply.status(204).send();
     },
   );
 }

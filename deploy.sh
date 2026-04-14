@@ -53,6 +53,10 @@ fi
 PROJECT_NAME="pbxscribe-api-backend"
 STACK_NAME="${PROJECT_NAME}-${ENVIRONMENT}-api"
 LAMBDA_FUNCTION="${PROJECT_NAME}-${ENVIRONMENT}-api"
+PARSER_LAMBDA_FUNCTION="${PROJECT_NAME}-${ENVIRONMENT}-inbound-parser"
+INIT_LAMBDA_FUNCTION="${PROJECT_NAME}-${ENVIRONMENT}-init"
+PROCESSOR_LAMBDA_FUNCTION="${PROJECT_NAME}-${ENVIRONMENT}-processor"
+WEBHOOK_LAMBDA_FUNCTION="${PROJECT_NAME}-${ENVIRONMENT}-webhook"
 AWS_REGION="${AWS_REGION:-us-east-2}"
 AWS_PROFILE="${AWS_PROFILE:-default}"
 BUILD_DIR=".build"
@@ -144,40 +148,94 @@ fi
 # ---------------------------------------------------------------------------
 # Step 2: Package and upload Lambda code
 # ---------------------------------------------------------------------------
+# if $RUN_CODE; then
+#   log "Building Lambda package..."
+
+#   # Clean up any previous build
+#   rm -rf "$BUILD_DIR" "$ZIP_FILE"
+
+#   # Copy source into build dir and install production dependencies
+#   cp -r src/api "$BUILD_DIR"
+#   (cd "$BUILD_DIR" && npm ci --omit=dev --silent)
+
+#   # Remove test files from the package
+#   rm -rf "${BUILD_DIR}/tests"
+
+#   # Zip from inside the build dir so files are at the root of the archive
+#   (cd "$BUILD_DIR" && zip -r "../$ZIP_FILE" . -x "*.git*" > /dev/null)
+
+#   # Clean up build dir
+#   rm -rf "$BUILD_DIR"
+
+#   ZIP_SIZE=$(du -sh "$ZIP_FILE" | cut -f1)
+#   ok "Package built: $ZIP_FILE ($ZIP_SIZE)"
+
+#   log "Uploading Lambda package..."
+#   aws_cmd lambda update-function-code \
+#     --function-name "$LAMBDA_FUNCTION" \
+#     --zip-file "fileb://${ZIP_FILE}" \
+#     --output text --query 'FunctionArn' > /dev/null
+
+#   log "Waiting for Lambda update to complete..."
+#   aws_cmd lambda wait function-updated \
+#     --function-name "$LAMBDA_FUNCTION"
+
+#   ok "Lambda code uploaded"
+#   echo
+# fi
+
 if $RUN_CODE; then
-  log "Building Lambda package..."
+  # Define your Lambda mapping: "SourceDir:FunctionName:ZipName"
+  # Add as many as you need here
+  LAMBDA_CONFIGS=(
+    "src/api:$LAMBDA_FUNCTION:api_deploy.zip"
+    "src/parser:$PARSER_LAMBDA_FUNCTION:parser_deploy.zip"
+	"src/init:$INIT_LAMBDA_FUNCTION:init_deploy.zip"
+    "src/processor:$PROCESSOR_LAMBDA_FUNCTION:processor_deploy.zip"
+    "src/webhook:$WEBHOOK_LAMBDA_FUNCTION:webhook_deploy.zip"
+  )
 
-  # Clean up any previous build
-  rm -rf "$BUILD_DIR" "$ZIP_FILE"
+  for CONFIG in "${LAMBDA_CONFIGS[@]}"; do
+    # Split the config string
+    IFS=":" read -r SRC_DIR FUNC_NAME ZIP_NAME <<< "$CONFIG"
 
-  # Copy source into build dir and install production dependencies
-  cp -r src/api "$BUILD_DIR"
-  (cd "$BUILD_DIR" && npm ci --omit=dev --silent)
+    log "Building package for $FUNC_NAME from $SRC_DIR..."
 
-  # Remove test files from the package
-  rm -rf "${BUILD_DIR}/tests"
+    # Clean up and prepare build directory
+    rm -rf "$BUILD_DIR" "$ZIP_NAME"
+    mkdir -p "$BUILD_DIR"
 
-  # Zip from inside the build dir so files are at the root of the archive
-  (cd "$BUILD_DIR" && zip -r "../$ZIP_FILE" . -x "*.git*" > /dev/null)
+    # Copy source and install production dependencies
+    cp -r "$SRC_DIR/." "$BUILD_DIR/"
+    if [ -f "$BUILD_DIR/package.json" ]; then
+      (cd "$BUILD_DIR" && npm ci --omit=dev --silent)
+    fi
 
-  # Clean up build dir
-  rm -rf "$BUILD_DIR"
+    # Remove test files
+    rm -rf "${BUILD_DIR}/tests"
 
-  ZIP_SIZE=$(du -sh "$ZIP_FILE" | cut -f1)
-  ok "Package built: $ZIP_FILE ($ZIP_SIZE)"
+    # Create the zip archive
+    (cd "$BUILD_DIR" && zip -r "../$ZIP_NAME" . -x "*.git*" > /dev/null)
+    
+    ZIP_SIZE=$(du -sh "$ZIP_NAME" | cut -f1)
+    ok "Package built: $ZIP_NAME ($ZIP_SIZE)"
 
-  log "Uploading Lambda package..."
-  aws_cmd lambda update-function-code \
-    --function-name "$LAMBDA_FUNCTION" \
-    --zip-file "fileb://${ZIP_FILE}" \
-    --output text --query 'FunctionArn' > /dev/null
+    # Upload to AWS
+    log "Uploading code to: $FUNC_NAME..."
+    aws_cmd lambda update-function-code \
+      --function-name "$FUNC_NAME" \
+      --zip-file "fileb://${ZIP_NAME}" \
+      --output text --query 'FunctionArn' > /dev/null
 
-  log "Waiting for Lambda update to complete..."
-  aws_cmd lambda wait function-updated \
-    --function-name "$LAMBDA_FUNCTION"
-
-  ok "Lambda code uploaded"
-  echo
+    # Wait for update to propagate
+    log "Waiting for $FUNC_NAME update to complete..."
+    aws_cmd lambda wait function-updated --function-name "$FUNC_NAME"
+    
+    # Cleanup
+    rm -rf "$BUILD_DIR" "$ZIP_NAME"
+    ok "Deployment of $FUNC_NAME complete"
+    echo
+  done
 fi
 
 # ---------------------------------------------------------------------------

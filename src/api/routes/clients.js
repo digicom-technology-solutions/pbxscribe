@@ -30,6 +30,8 @@ const clientSchema = {
     delivery_failure_notification: {type: "boolean"},
     usage_alert_notification: {type: "boolean"},
     system_alert_notification: {type: "boolean"},
+    stripe_customer_id: {type: ["null", "string"]},
+    stripe_subscription_id: {type: ["null", "string"]},
     referral_link: {type: "string"},
     created_at: {type: "string", format: "date-time"},
     updated_at: {type: "string", format: "date-time"},
@@ -116,6 +118,8 @@ async function clientRoutes(fastify) {
             delivery_failure_notification: {type: "boolean"},
             usage_alert_notification: {type: "boolean"},
             system_alert_notification: {type: "boolean"},
+            stripe_customer_id: {type: ["null", "string"]},
+            stripe_subscription_id: {type: ["null", "string"]},
           },
           additionalProperties: false,
         },
@@ -138,6 +142,8 @@ async function clientRoutes(fastify) {
         delivery_failure_notification,
         usage_alert_notification,
         system_alert_notification,
+        stripe_customer_id,
+        stripe_subscription_id,
       } = request.body;
 
       try {
@@ -155,6 +161,8 @@ async function clientRoutes(fastify) {
           delivery_failure_notification,
           usage_alert_notification,
           system_alert_notification,
+          stripe_customer_id,
+          stripe_subscription_id,
         });
 
         let referredby_client = null;
@@ -182,6 +190,8 @@ async function clientRoutes(fastify) {
           delivery_failure_notification: client.delivery_failure_notification,
           usage_alert_notification: client.usage_alert_notification,
           system_alert_notification: client.system_alert_notification,
+          stripe_customer_id: client.stripe_customer_id,
+          stripe_subscription_id: client.stripe_subscription_id,
           created_at: client.created_at,
           updated_at: client.updated_at,
           referredby_client: referredby_client,
@@ -367,6 +377,8 @@ async function clientRoutes(fastify) {
             delivery_failure_notification: {type: "boolean"},
             usage_alert_notification: {type: "boolean"},
             system_alert_notification: {type: "boolean"},
+            stripe_customer_id: {type: ["null", "string"]},
+            stripe_subscription_id: {type: ["null", "string"]},
           },
           additionalProperties: false,
           minProperties: 1,

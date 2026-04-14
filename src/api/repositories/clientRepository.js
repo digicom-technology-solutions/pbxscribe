@@ -47,7 +47,7 @@ async function createClient(
  */
 async function findClientById(pool, id) {
   const result = await pool.query(
-    `SELECT id, client_name, plan_id, client_category, client_email, client_address, client_phone, timezone, client_status, client_referral_link, delivery_failure_notification, usage_alert_notification, system_alert_notification, created_at, updated_at
+    `SELECT id, client_name, plan_id, client_category, client_email, client_address, client_phone, timezone, client_status, client_referral_link, delivery_failure_notification, usage_alert_notification, system_alert_notification, stripe_customer_id, stripe_subscription_id, created_at, updated_at
      FROM clients
      WHERE id = $1`,
     [id],
@@ -63,7 +63,7 @@ async function findClientById(pool, id) {
  */
 async function findClientByEmail(pool, email) {
   const result = await pool.query(
-    `SELECT id, client_name, plan_id, client_category, client_email, client_address, client_phone, timezone, client_status, client_referral_link, delivery_failure_notification, usage_alert_notification, system_alert_notification, created_at, updated_at
+    `SELECT id, client_name, plan_id, client_category, client_email, client_address, client_phone, timezone, client_status, client_referral_link, delivery_failure_notification, usage_alert_notification, system_alert_notification, stripe_customer_id, stripe_subscription_id, created_at, updated_at
      FROM clients
      WHERE client_email = $1`,
     [email],
@@ -79,7 +79,7 @@ async function findClientByEmail(pool, email) {
  */
 async function findClientByReferralLink(pool, referralLink) {
   const result = await pool.query(
-    `SELECT id, client_name, plan_id, client_category, client_email, client_address, client_phone, timezone, client_status, client_referral_link, delivery_failure_notification, usage_alert_notification, system_alert_notification, created_at, updated_at
+    `SELECT id, client_name, plan_id, client_category, client_email, client_address, client_phone, timezone, client_status, client_referral_link, delivery_failure_notification, usage_alert_notification, system_alert_notification, stripe_customer_id, stripe_subscription_id, created_at, updated_at
      FROM clients
      WHERE client_referral_link = $1`,
     [referralLink],
@@ -91,7 +91,7 @@ async function findClientByReferralLink(pool, referralLink) {
  * Update a client (partial updates supported)
  * @param {Pool} pool
  * @param {string} id - UUID
- * @param {{ client_name?: string, plan_id?: string, client_category?: string, client_email?: string, client_address?: string, client_phone?: string, timezone?: string, client_status?: string, client_referral_link?: string, delivery_failure_notification?: boolean, usage_alert_notification?: boolean, system_alert_notification?: boolean }} fields - Fields to update
+ * @param {{ client_name?: string, plan_id?: string, client_category?: string, client_email?: string, client_address?: string, client_phone?: string, timezone?: string, client_status?: string, client_referral_link?: string, delivery_failure_notification?: boolean, usage_alert_notification?: boolean, system_alert_notification?: boolean, stripe_customer_id?: string, stripe_subscription_id?: string }} fields - Fields to update
  * @returns {Promise<Object|null>} Updated client row, or null if not found
  */
 async function updateClient(pool, id, fields) {
@@ -108,6 +108,8 @@ async function updateClient(pool, id, fields) {
     "delivery_failure_notification",
     "usage_alert_notification",
     "system_alert_notification",
+    "stripe_customer_id",
+    "stripe_subscription_id",
   ];
   const updates = [];
   const values = [];
@@ -131,7 +133,7 @@ async function updateClient(pool, id, fields) {
     `UPDATE clients
      SET ${updates.join(", ")}
      WHERE id = $${values.length}
-     RETURNING id, client_name, plan_id, client_category, client_email, client_address, client_phone, timezone, client_status, client_referral_link, delivery_failure_notification, usage_alert_notification, system_alert_notification, created_at, updated_at`,
+     RETURNING id, client_name, plan_id, client_category, client_email, client_address, client_phone, timezone, client_status, client_referral_link, delivery_failure_notification, usage_alert_notification, system_alert_notification, stripe_customer_id, stripe_subscription_id, created_at, updated_at`,
     values,
   );
   return result.rows[0] || null;
@@ -158,7 +160,7 @@ async function listClients(pool, {limit = 20, offset = 0, status} = {}) {
   // Run data query and count query in parallel
   const [dataResult, countResult] = await Promise.all([
     pool.query(
-      `SELECT id, client_name, plan_id, client_category, client_email, client_address, client_phone, timezone, client_status, client_referral_link, delivery_failure_notification, usage_alert_notification, system_alert_notification, created_at, updated_at
+      `SELECT id, client_name, plan_id, client_category, client_email, client_address, client_phone, timezone, client_status, client_referral_link, delivery_failure_notification, usage_alert_notification, system_alert_notification, stripe_customer_id, stripe_subscription_id, created_at, updated_at
        FROM clients
        ${where}
        ORDER BY created_at DESC

@@ -13,6 +13,9 @@ CREATE TABLE clients (
   delivery_failure_notification BOOLEAN NOT NULL DEFAULT FALSE,
   usage_alert_notification BOOLEAN NOT NULL DEFAULT FALSE,
   system_alert_notification BOOLEAN NOT NULL DEFAULT FALSE,
+  stripe_customer_id VARCHAR(255),
+  stripe_subscription_id VARCHAR(255),
+  pbx_identifier VARCHAR(255) NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT clients_email_unique UNIQUE (client_email),
@@ -23,6 +26,7 @@ CREATE TABLE clients (
 );
 
 CREATE INDEX IF NOT EXISTS idx_clients_email ON clients (client_email);
+CREATE INDEX IF NOT EXISTS idx_clients_pbx_identifier ON clients (pbx_identifier);
 CREATE INDEX IF NOT EXISTS idx_clients_status ON clients (client_status);
 CREATE INDEX IF NOT EXISTS idx_clients_plan_id ON clients (plan_id);
 CREATE INDEX IF NOT EXISTS idx_clients_referral_link ON clients (client_referral_link);
@@ -39,8 +43,10 @@ INSERT INTO clients (
   client_referral_link,
   delivery_failure_notification,
   usage_alert_notification,
-  system_alert_notification
-
+  system_alert_notification,
+  stripe_customer_id,
+  stripe_subscription_id,
+  pbx_identifier
 ) VALUES (
   '1',
   'Digicom Technology Solutions',
@@ -53,5 +59,8 @@ INSERT INTO clients (
   'https://pbxscribe.com/referral/31236f14-1544-45c2-86ec-d5198d57070e',
   TRUE,	
   TRUE,
-  TRUE
+  TRUE,
+  'cus_UIs7V2dwEjnjdU',
+  'sub_1TKGPbGvtWTEgQjMORoPZu0Z',
+  'dtsit-pbx'
 );
