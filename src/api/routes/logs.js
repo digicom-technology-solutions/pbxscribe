@@ -28,6 +28,12 @@ const logSchema = {
       enum: ["PROCESSING", "DELIVERED", "FAILED"],
     },
     delivery_timestamp: {type: "string", format: "date-time"},
+    sms_delivery_status: {
+      type: "string",
+      enum: ["PROCESSING", "DELIVERED", "FAILED"],
+    },
+    sms_delivery_timestamp: {type: "string", format: "date-time"},
+    duration_ms: {type: "integer"},
     message_id: {type: "string"},
     created_at: {type: "string", format: "date-time"},
     updated_at: {type: "string", format: "date-time"},
@@ -77,6 +83,12 @@ async function logsRoutes(fastify) {
               enum: ["PROCESSING", "DELIVERED", "FAILED"],
             },
             delivery_timestamp: {type: "string", format: "date-time"},
+            sms_delivery_status: {
+              type: "string",
+              enum: ["PROCESSING", "DELIVERED", "FAILED"],
+            },
+            sms_delivery_timestamp: {type: "string", format: "date-time"},
+            duration_ms: {type: "integer"},
             message_id: {type: "string", minLength: 1, maxLength: 255},
           },
           additionalProperties: false,
@@ -102,6 +114,9 @@ async function logsRoutes(fastify) {
         voicemail,
         delivery_status,
         delivery_timestamp,
+        sms_delivery_status,
+        sms_delivery_timestamp,
+        duration_ms,
         message_id,
       } = request.body;
 
@@ -121,6 +136,9 @@ async function logsRoutes(fastify) {
           voicemail,
           delivery_status,
           delivery_timestamp,
+          sms_delivery_status,
+          sms_delivery_timestamp,
+          duration_ms,
           message_id,
         });
 
@@ -221,6 +239,9 @@ async function logsRoutes(fastify) {
             delivery_status: {type: "string", minLength: 1, maxLength: 255},
             job_status: {type: "string", minLength: 1, maxLength: 255},
             delivery_timestamp: {type: "string", format: "date-time"},
+            sms_delivery_status: {type: "string", minLength: 1, maxLength: 255},
+            sms_delivery_timestamp: {type: "string", format: "date-time"},
+            duration_ms: {type: "integer"},
             message_id: {type: "string", minLength: 1, maxLength: 255},
           },
           additionalProperties: false,

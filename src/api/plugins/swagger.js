@@ -50,6 +50,10 @@ async function swaggerPlugin(fastify) {
           name: "Support Tickets",
           description: "Support tickets CRUD operations",
         },
+        {
+          name: "Whitelisted IPs",
+          description: "Whitelisted IPs CRUD operations",
+        },
       ],
       components: {
         securitySchemes: {

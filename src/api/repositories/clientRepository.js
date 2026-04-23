@@ -1,5 +1,27 @@
 // Client repository - database operations for clients table
 
+const extractVoicemailData = (text, delimiter) => {
+  const escapedDelimiter = delimiter.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  const createRegex = (label, groupName) =>
+    new RegExp(`${label}\\s*${escapedDelimiter}\\s*(?<${groupName}>.*)`, "i");
+
+  const patterns = {
+    caller: createRegex("Caller", "caller"),
+    time: createRegex("Time", "time"),
+    duration: createRegex("Duration", "duration"),
+  };
+
+  const results = {};
+
+  for (const [key, regex] of Object.entries(patterns)) {
+    const match = text.match(regex);
+    results[key] = match ? match.groups[key].trim() : null;
+  }
+
+  return results;
+};
+
 /**
  * Create a new client
  * @param {Pool} pool - pg.Pool instance
@@ -18,12 +40,14 @@ async function createClient(
     timezone,
     client_status,
     client_referral_link,
+    pbx_tag_format,
+    tls_encryption_enabled,
   },
 ) {
   const result = await pool.query(
-    `INSERT INTO clients (client_name, plan_id, client_category, client_email, client_address, client_phone, timezone, client_status, client_referral_link)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-     RETURNING id, client_name, plan_id, client_category, client_email, client_address, client_phone, timezone, client_status, client_referral_link, created_at, updated_at`,
+    `INSERT INTO clients (client_name, plan_id, client_category, client_email, client_address, client_phone, timezone, client_status, client_referral_link, pbx_tag_format, tls_encryption_enabled)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+     RETURNING id, client_name, plan_id, client_category, client_email, client_address, client_phone, timezone, client_status, client_referral_link, pbx_tag_format, tls_encryption_enabled, created_at, updated_at`,
     [
       client_name,
       plan_id,
@@ -34,6 +58,8 @@ async function createClient(
       timezone,
       client_status,
       client_referral_link,
+      pbx_tag_format,
+      tls_encryption_enabled,
     ],
   );
   return result.rows[0];
@@ -47,7 +73,7 @@ async function createClient(
  */
 async function findClientById(pool, id) {
   const result = await pool.query(
-    `SELECT id, client_name, plan_id, client_category, client_email, client_address, client_phone, timezone, client_status, client_referral_link, delivery_failure_notification, usage_alert_notification, system_alert_notification, stripe_customer_id, stripe_subscription_id, created_at, updated_at
+    `SELECT id, client_name, plan_id, client_category, client_email, client_address, client_phone, timezone, client_status, client_referral_link, pbx_tag_format, tls_encryption_enabled, delivery_failure_notification, usage_alert_notification, system_alert_notification, stripe_customer_id, stripe_subscription_id, created_at, updated_at
      FROM clients
      WHERE id = $1`,
     [id],
@@ -63,7 +89,7 @@ async function findClientById(pool, id) {
  */
 async function findClientByEmail(pool, email) {
   const result = await pool.query(
-    `SELECT id, client_name, plan_id, client_category, client_email, client_address, client_phone, timezone, client_status, client_referral_link, delivery_failure_notification, usage_alert_notification, system_alert_notification, stripe_customer_id, stripe_subscription_id, created_at, updated_at
+    `SELECT id, client_name, plan_id, client_category, client_email, client_address, client_phone, timezone, client_status, client_referral_link, pbx_tag_format, tls_encryption_enabled, delivery_failure_notification, usage_alert_notification, system_alert_notification, stripe_customer_id, stripe_subscription_id, created_at, updated_at
      FROM clients
      WHERE client_email = $1`,
     [email],
@@ -79,7 +105,7 @@ async function findClientByEmail(pool, email) {
  */
 async function findClientByReferralLink(pool, referralLink) {
   const result = await pool.query(
-    `SELECT id, client_name, plan_id, client_category, client_email, client_address, client_phone, timezone, client_status, client_referral_link, delivery_failure_notification, usage_alert_notification, system_alert_notification, stripe_customer_id, stripe_subscription_id, created_at, updated_at
+    `SELECT id, client_name, plan_id, client_category, client_email, client_address, client_phone, timezone, client_status, client_referral_link, pbx_tag_format, tls_encryption_enabled, delivery_failure_notification, usage_alert_notification, system_alert_notification, stripe_customer_id, stripe_subscription_id, created_at, updated_at
      FROM clients
      WHERE client_referral_link = $1`,
     [referralLink],
@@ -110,6 +136,8 @@ async function updateClient(pool, id, fields) {
     "system_alert_notification",
     "stripe_customer_id",
     "stripe_subscription_id",
+    "pbx_tag_format",
+    "tls_encryption_enabled",
   ];
   const updates = [];
   const values = [];
@@ -133,7 +161,7 @@ async function updateClient(pool, id, fields) {
     `UPDATE clients
      SET ${updates.join(", ")}
      WHERE id = $${values.length}
-     RETURNING id, client_name, plan_id, client_category, client_email, client_address, client_phone, timezone, client_status, client_referral_link, delivery_failure_notification, usage_alert_notification, system_alert_notification, stripe_customer_id, stripe_subscription_id, created_at, updated_at`,
+     RETURNING id, client_name, plan_id, client_category, client_email, client_address, client_phone, timezone, client_status, client_referral_link, pbx_tag_format, tls_encryption_enabled, delivery_failure_notification, usage_alert_notification, system_alert_notification, stripe_customer_id, stripe_subscription_id, created_at, updated_at`,
     values,
   );
   return result.rows[0] || null;
@@ -160,7 +188,7 @@ async function listClients(pool, {limit = 20, offset = 0, status} = {}) {
   // Run data query and count query in parallel
   const [dataResult, countResult] = await Promise.all([
     pool.query(
-      `SELECT id, client_name, plan_id, client_category, client_email, client_address, client_phone, timezone, client_status, client_referral_link, delivery_failure_notification, usage_alert_notification, system_alert_notification, stripe_customer_id, stripe_subscription_id, created_at, updated_at
+      `SELECT id, client_name, plan_id, client_category, client_email, client_address, client_phone, timezone, client_status, client_referral_link, pbx_tag_format, tls_encryption_enabled, delivery_failure_notification, usage_alert_notification, system_alert_notification, stripe_customer_id, stripe_subscription_id, created_at, updated_at
        FROM clients
        ${where}
        ORDER BY created_at DESC
@@ -173,6 +201,19 @@ async function listClients(pool, {limit = 20, offset = 0, status} = {}) {
   return {
     clients: dataResult.rows,
     total: countResult.rows[0].total,
+  };
+}
+
+/**
+ * List clients with pagination and optional status filter
+ * @param {Pool} pool
+ * @param {{ limit?: number, offset?: number, status?: string }} options
+ * @returns {Promise<{ clients: Object[], total: number }>}
+ */
+async function callerIdParser(emailBody, delimiter) {
+  const dataResult = extractVoicemailData(emailBody, delimiter);
+  return {
+    dataResult,
   };
 }
 
@@ -195,4 +236,5 @@ module.exports = {
   listClients,
   deleteClient,
   findClientByReferralLink,
+  callerIdParser,
 };

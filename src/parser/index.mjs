@@ -107,6 +107,18 @@ export const handler = async (event) => {
         }),
       );
 
+      const result = await pool.query(
+        `SELECT id, client_id, email, pbx_email, firstname, lastname, phone, sms_notification, timezone, user_type, user_role, user_status, two_fa_enabled, two_fa_secret, created_at, updated_at
+     FROM users
+     WHERE email = $1`,
+        [fromAddress],
+      );
+      console.log(
+        `User lookup for ${fromAddress}: ${result.rows.length} found`,
+      );
+
+      const client_id = result.rows[0]?.client_id || 1;
+
       console.log(`Attachment uploaded to S3: ${voicemail}`);
       const query = `
         INSERT INTO logs (
@@ -114,9 +126,8 @@ export const handler = async (event) => {
 		to_email_addresses, email_body, voicemail, delivery_status
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       `;
-
       const values = [
-        1,
+        client_id,
         job_name,
         "UPLOADED",
         filename,

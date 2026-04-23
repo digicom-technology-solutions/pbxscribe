@@ -104,7 +104,7 @@ Parameters:
   StripeSecretKey:
     Type: String
     NoEcho: true
-    Description: Verified SES email address for sending emails (https://console.aws.amazon.com/ses/)
+    Description: Stripe secret key for payment integration (https://dashboard.stripe.com/)
 
   TestEmail:
     Type: String
@@ -115,6 +115,16 @@ Parameters:
     Type: String
     NoEcho: true
     Description: Default recipient email address for processor Lambda (used when no user email is available)
+
+  DefaultSupportToEmail:
+    Type: String
+    NoEcho: true
+    Description: Default recipient email address for support Lambda (used when no user email is available)
+
+  FrontendUrl:
+    Type: String
+    NoEcho: true
+    Description: URL of the frontend application (used for constructing links in emails)
 
 Conditions:
   IsProduction: !Equals [!Ref Environment, "prod"]
@@ -265,6 +275,7 @@ Resources:
                 Action:
                   - ses:SendEmail
                   - ses:SendRawEmail
+                  - ses:GetAccount
                 Resource: "*"
         - PolicyName: LambdaTranscribePolicy
           PolicyDocument:
@@ -285,6 +296,7 @@ Resources:
                   - s3:GetObject
                   - s3:ListBucket
                   - s3:DeleteObject
+                  - s3:ListObjects
                 Resource:
                   - !GetAtt EmailS3Bucket.Arn
                   - !Sub "${EmailS3Bucket.Arn}/*"
@@ -337,6 +349,12 @@ Resources:
           TWILIO_PHONENUMBER_DEFAULT: !Ref TwilioPhoneNumberDefault
           SES_FROM_EMAIL: !Ref SesFromEmail
           STRIPE_SECRET_KEY: !Ref StripeSecretKey
+          AWS_FILE_STORAGE_BUCKET_NAME: !Ref EmailS3Bucket
+          FRONTEND_URL: !Ref FrontendUrl
+          TEST_EMAIL: !Ref TestEmail
+          DEFAULT_TO_EMAIL: !Ref DefaultToEmail
+          FROM_EMAIL: !Ref SesFromEmail
+          DEFAULT_SUPPORT_TO_EMAIL: !Ref DefaultSupportToEmail
       Code:
         ZipFile: |
           // Placeholder Lambda function

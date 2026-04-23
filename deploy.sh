@@ -187,12 +187,16 @@ fi
 if $RUN_CODE; then
   # Define your Lambda mapping: "SourceDir:FunctionName:ZipName"
   # Add as many as you need here
+#   LAMBDA_CONFIGS=(
+#     "src/api:$LAMBDA_FUNCTION:api_deploy.zip"
+#     "src/parser:$PARSER_LAMBDA_FUNCTION:parser_deploy.zip"
+# 	"src/init:$INIT_LAMBDA_FUNCTION:init_deploy.zip"
+#     "src/processor:$PROCESSOR_LAMBDA_FUNCTION:processor_deploy.zip"
+#     "src/webhook:$WEBHOOK_LAMBDA_FUNCTION:webhook_deploy.zip"
+#   )
+
   LAMBDA_CONFIGS=(
     "src/api:$LAMBDA_FUNCTION:api_deploy.zip"
-    "src/parser:$PARSER_LAMBDA_FUNCTION:parser_deploy.zip"
-	"src/init:$INIT_LAMBDA_FUNCTION:init_deploy.zip"
-    "src/processor:$PROCESSOR_LAMBDA_FUNCTION:processor_deploy.zip"
-    "src/webhook:$WEBHOOK_LAMBDA_FUNCTION:webhook_deploy.zip"
   )
 
   for CONFIG in "${LAMBDA_CONFIGS[@]}"; do

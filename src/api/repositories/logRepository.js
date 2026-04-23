@@ -23,11 +23,14 @@ async function createLog(
     voicemail,
     delivery_status,
     delivery_timestamp,
+    sms_delivery_status,
+    sms_delivery_timestamp,
+    duration_ms,
     message_id,
   },
 ) {
   const result = await pool.query(
-    `INSERT INTO logs (client_id, caller_id, job_name, job_status, filename, email_attachment_type, email_subject, email_from_address, email_from_name, to_email_addresses, email_body, voicemail, delivery_status, delivery_timestamp, message_id)
+    `INSERT INTO logs (client_id, caller_id, job_name, job_status, filename, email_attachment_type, email_subject, email_from_address, email_from_name, to_email_addresses, email_body, voicemail, delivery_status, delivery_timestamp, sms_delivery_status, sms_delivery_timestamp, duration_ms, message_id)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
      RETURNING id, client_id, caller_id, job_name, job_status, filename, email_attachment_type, email_subject, email_from_address, email_from_name, to_email_addresses, email_body, voicemail, delivery_status, delivery_timestamp, message_id, created_at, updated_at`,
     [
@@ -45,6 +48,9 @@ async function createLog(
       voicemail,
       delivery_status,
       delivery_timestamp,
+      sms_delivery_status,
+      sms_delivery_timestamp,
+      duration_ms,
       message_id,
     ],
   );
@@ -55,7 +61,7 @@ async function createLog(
  * Update a log (partial updates supported)
  * @param {Pool} pool
  * @param {string} id - UUID
- * @param {{ client_id?: number, job_name?: string, job_status?: string, filename?: string, email_attachment_type?: string, email_subject?: string, email_from_address?: string, email_from_name?: string, to_email_addresses?: string, email_body?: string, voicemail?: string, delivery_status?: string, delivery_timestamp?: string, message_id?: string }} fields - Fields to update
+ * @param {{ client_id?: number, job_name?: string, job_status?: string, filename?: string, email_attachment_type?: string, email_subject?: string, email_from_address?: string, email_from_name?: string, to_email_addresses?: string, email_body?: string, voicemail?: string, delivery_status?: string, delivery_timestamp?: string, sms_delivery_status?: string, sms_delivery_timestamp?: string, duration_ms?: number, message_id?: string }} fields - Fields to update
  * @returns {Promise<Object|null>} Updated log row, or null if not found
  */
 async function updateLog(pool, id, fields) {
@@ -63,6 +69,9 @@ async function updateLog(pool, id, fields) {
     "delivery_status",
     "job_status",
     "delivery_timestamp",
+    "sms_delivery_status",
+    "sms_delivery_timestamp",
+    "duration_ms",
     "message_id",
   ];
   const updates = [];
@@ -86,7 +95,7 @@ async function updateLog(pool, id, fields) {
     `UPDATE logs
      SET ${updates.join(", ")}
      WHERE id = $${values.length}
-     RETURNING id, client_id, caller_id, job_name, job_status, filename, email_attachment_type, email_subject, email_from_address, email_from_name, to_email_addresses, email_body, voicemail, delivery_status, delivery_timestamp, message_id, created_at, updated_at`,
+     RETURNING id, client_id, caller_id, job_name, job_status, filename, email_attachment_type, email_subject, email_from_address, email_from_name, to_email_addresses, email_body, voicemail, delivery_status, delivery_timestamp, sms_delivery_status, sms_delivery_timestamp, duration_ms, message_id, created_at, updated_at`,
     values,
   );
   return result.rows[0] || null;
@@ -118,7 +127,7 @@ async function listLogs(
   // Run data query and count query in parallel
   const [dataResult, countResult] = await Promise.all([
     pool.query(
-      `SELECT id, client_id, job_name, job_status, filename, email_attachment_type, email_subject, email_from_address, email_from_name, to_email_addresses, email_body, voicemail, delivery_status, delivery_timestamp, message_id, created_at, updated_at
+      `SELECT id, client_id, job_name, job_status, filename, email_attachment_type, email_subject, email_from_address, email_from_name, to_email_addresses, email_body, voicemail, delivery_status, delivery_timestamp, sms_delivery_status, sms_delivery_timestamp, duration_ms, message_id, created_at, updated_at
        FROM logs
        ${where}
        ORDER BY created_at DESC

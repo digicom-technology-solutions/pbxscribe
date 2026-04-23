@@ -135,14 +135,10 @@ const renderRow = (label, value) => `
 `;
 
 const extractVoicemailData = (text) => {
-  // Regex breakdown:
-  // Caller: Looks for "Caller -" followed by everything in parentheses
-  // Time: Looks for "Time -" and captures the full timestamp until the end of the line
-  // Duration: Looks for "Duration -" and captures the time units (e.g., 0m 24s)
   const patterns = {
-    caller: /Caller\s*-\s*\((?<caller>.*?)\)/,
-    time: /Time\s*-\s*(?<time>.*)/,
-    duration: /Duration\s*-\s*(?<duration>.*)/,
+    caller: /Caller\s*-\s*(?<caller>.*)/i,
+    time: /Time\s*-\s*(?<time>.*)/i,
+    duration: /Duration\s*-\s*(?<duration>.*)/i,
   };
 
   const results = {};
@@ -152,7 +148,27 @@ const extractVoicemailData = (text) => {
     results[key] = match ? match.groups[key].trim() : null;
   }
 
-  return results;
+  let duration_ms = 0;
+  if (results.duration) {
+    const durationStr = results.duration.toLowerCase();
+
+    const minutesMatch = durationStr.match(/(\d+)m/);
+    const secondsMatch = durationStr.match(/(\d+)s/);
+
+    const minutes = minutesMatch ? parseInt(minutesMatch[1], 10) : 0;
+    const seconds = secondsMatch ? parseInt(secondsMatch[1], 10) : 0;
+
+    duration_ms = (minutes * 60 + seconds) * 1000;
+  }
+
+  const output = {
+    caller: results.caller,
+    time: results.time,
+    duration: results.duration,
+    duration_ms: duration_ms,
+  };
+
+  return output;
 };
 
 /**
@@ -288,20 +304,29 @@ export const handler = async (event) => {
 
     console.log("Transcript URI:", transcriptUri);
 
-    // 3. AI Parsing (Bedrock)
     let caller = "--",
       time = "--",
-      duration = "--";
+      duration = "--",
+      duration_ms = 0;
     if (email_body) {
       const {
         caller: c,
         time: t,
         duration: d,
+        duration_ms: dm,
       } = extractVoicemailData(email_body);
       caller = c || "--";
       time = t || "--";
       duration = d || "--";
+      duration_ms = dm || 0;
     }
+
+    console.log("Extracted Voicemail Data:", {
+      caller,
+      time,
+      duration,
+      duration_ms,
+    });
 
     // 4. Parallel S3 Fetching (Transcription + Audio)
     const transcriptKey = transcriptUri.split("/").pop();
@@ -354,6 +379,7 @@ export const handler = async (event) => {
       voicemailKey,
     });
 
+    let clientData = null;
     if (isSpam) {
       jobStatus = "SPAM_DETECTED";
       const res = await sendEmail(emailParams, true);
@@ -369,7 +395,7 @@ export const handler = async (event) => {
         console.log("Client Data:", JSON.stringify(client.rows));
 
         if (client?.rows?.length) {
-          const clientData = client.rows[0];
+          clientData = client.rows[0];
           if (
             email_from_address?.toLowerCase() !==
             clientData?.email?.toLowerCase()
@@ -386,11 +412,11 @@ export const handler = async (event) => {
           finalMessageId = res.messageId;
           jobStatus = "PROCESS_COMPLETED";
 
-          if (clientData.phone && clientData.sms_notification === true) {
-            console.log("Sending SMS to:", clientData.phone);
+          if (clientData?.phone && clientData?.sms_notification === true) {
+            console.log("Sending SMS to:", clientData?.phone);
             await sendSms(
               email_from_name,
-              clientData.phone,
+              clientData?.phone,
               transcription,
               caller,
               time,
@@ -412,12 +438,24 @@ export const handler = async (event) => {
     }
 
     // 6. Final DB Update
-    const updateQuery = `UPDATE logs SET job_status = $1, message_id = $2 WHERE job_name = $3`;
-    const values = [
-      jobStatus,
-      finalMessageId.replace(/[<>]/g, "").split("@")[0],
-      jobName,
-    ];
+    const messageIdClean = finalMessageId.replace(/[<>]/g, "").split("@")[0];
+
+    const fields = ["job_status = $1", "message_id = $2", "duration_ms = $3"];
+    const values = [jobStatus, messageIdClean, duration_ms];
+
+    if (clientData?.phone && clientData?.sms_notification === true) {
+      values.push("DELIVERED", jobName);
+      fields.push("sms_delivery_status = $4", "sms_delivery_timestamp = NOW()");
+      // jobName becomes $5 in this branch
+    } else {
+      values.push(jobName);
+      // jobName becomes $4 in this branch
+    }
+    const updateQuery = `UPDATE logs SET ${fields.join(", ")} WHERE job_name = $${values.length}`;
+    console.log("Executing DB Update:", {
+      query: updateQuery,
+      values,
+    });
     await pool.query(updateQuery, values);
 
     console.log("Job status updated for:", jobName);

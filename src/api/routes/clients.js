@@ -1,4 +1,5 @@
 // User CRUD routes
+const {delimiter} = require("path");
 const {
   createClient,
   findClientById,
@@ -7,6 +8,7 @@ const {
   listClients,
   deleteClient,
   findClientByReferralLink,
+  callerIdParser,
 } = require("../repositories/clientRepository");
 const {findPlanById} = require("../repositories/subscriptionPlanRepository");
 const crypto = require("crypto");
@@ -33,6 +35,8 @@ const clientSchema = {
     stripe_customer_id: {type: ["null", "string"]},
     stripe_subscription_id: {type: ["null", "string"]},
     referral_link: {type: "string"},
+    pbx_tag_format: {type: "string"},
+    tls_encryption_enabled: {type: "boolean"},
     created_at: {type: "string", format: "date-time"},
     updated_at: {type: "string", format: "date-time"},
     referredby_client: {
@@ -120,6 +124,8 @@ async function clientRoutes(fastify) {
             system_alert_notification: {type: "boolean"},
             stripe_customer_id: {type: ["null", "string"]},
             stripe_subscription_id: {type: ["null", "string"]},
+            pbx_tag_format: {type: "string", minLength: 1, maxLength: 255},
+            tls_encryption_enabled: {type: "boolean"},
           },
           additionalProperties: false,
         },
@@ -144,6 +150,8 @@ async function clientRoutes(fastify) {
         system_alert_notification,
         stripe_customer_id,
         stripe_subscription_id,
+        pbx_tag_format,
+        tls_encryption_enabled,
       } = request.body;
 
       try {
@@ -163,6 +171,8 @@ async function clientRoutes(fastify) {
           system_alert_notification,
           stripe_customer_id,
           stripe_subscription_id,
+          pbx_tag_format,
+          tls_encryption_enabled,
         });
 
         let referredby_client = null;
@@ -196,6 +206,8 @@ async function clientRoutes(fastify) {
           updated_at: client.updated_at,
           referredby_client: referredby_client,
           subscription_plan: subscriptionPlan,
+          pbx_tag_format: client.pbx_tag_format,
+          tls_encryption_enabled: client.tls_encryption_enabled,
         });
       } catch (error) {
         if (error.code === "23505") {
@@ -379,6 +391,8 @@ async function clientRoutes(fastify) {
             system_alert_notification: {type: "boolean"},
             stripe_customer_id: {type: ["null", "string"]},
             stripe_subscription_id: {type: ["null", "string"]},
+            pbx_tag_format: {type: "string", minLength: 1, maxLength: 255},
+            tls_encryption_enabled: {type: "boolean"},
           },
           additionalProperties: false,
           minProperties: 1,
@@ -435,6 +449,97 @@ async function clientRoutes(fastify) {
       }
 
       return reply.status(204).send();
+    },
+  );
+
+  // POST /clients/parser — parse a client's email
+  fastify.post(
+    "/clients/parser",
+    {
+      preHandler: [fastify.authenticate],
+      schema: {
+        tags: ["Clients"],
+        summary: "Parse a client's email",
+        description:
+          "Parses a client's email for specific data. Requires authentication.",
+        security: [{bearerAuth: []}, {apiKeyAuth: []}],
+        body: {
+          type: "object",
+          required: ["client_id", "email_body"],
+          properties: {
+            client_id: {type: "integer"},
+            email_body: {type: "string"},
+            delimiter: {
+              type: "string",
+              description: "Caller - ",
+            },
+          },
+          additionalProperties: false,
+        },
+        response: {
+          201: {
+            type: "object",
+            properties: {
+              id: {type: "integer"},
+              email_body: {type: "string"},
+              client_name: {type: "string"},
+              delimiter: {type: "string"},
+              parser_data: {
+                type: "object",
+                properties: {
+                  caller: {type: "string"},
+                  time: {type: "string"},
+                  duration: {type: "string"},
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const {client_id, email_body, delimiterString} = request.body;
+
+      let client = null;
+      let rawDelimiter = delimiterString || "Caller -";
+
+      if (!delimiterString) {
+        client = await findClientById(fastify.pg, client_id);
+        if (!client) {
+          return reply.status(404).send({
+            error: {
+              message: "Client not found",
+              statusCode: 404,
+            },
+          });
+        }
+        rawDelimiter = client.pbx_tag_format || "Caller -";
+      }
+
+      if (typeof email_body !== "string") {
+        return reply.status(400).send({error: "email_body must be a string"});
+      }
+
+      const delimiter = rawDelimiter.replace(/\s+/g, "").slice(-1);
+      console.log("Using PBX tag format:", delimiter);
+
+      try {
+        const parserResult = await callerIdParser(email_body, delimiter);
+        console.log("Parser result:", JSON.stringify(parserResult));
+
+        return reply.status(201).send({
+          id: client?.id,
+          email_body,
+          client_name: client?.client_name,
+          delimiter: delimiter,
+          parser_data: parserResult?.dataResult || null,
+        });
+      } catch (err) {
+        fastify.log.error(err);
+        return reply
+          .status(500)
+          .send({error: "Failed to parse voicemail data"});
+      }
     },
   );
 }
