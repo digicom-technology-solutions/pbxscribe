@@ -5,7 +5,7 @@ CREATE TABLE ticket_messages (
   message_timestamp TEXT NOT NULL,
   attachment_filename VARCHAR(255),
   attachment_contenttype VARCHAR(50),
-  attachment_url VARCHAR(255),
+  attachment_upload_url TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT fk_ticket

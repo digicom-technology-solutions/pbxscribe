@@ -215,6 +215,27 @@ Resources:
         - Key: Environment
           Value: !Ref Environment
 
+  SupportAttachmentsS3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "${ProjectName}-${Environment}-support-attachments"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${Environment}-support-attachments"
+        - Key: Environment
+          Value: !Ref Environment
+
   # =============================================================================
   # S3 Bucket Policy for SES
   # =============================================================================
@@ -297,11 +318,14 @@ Resources:
                   - s3:ListBucket
                   - s3:DeleteObject
                   - s3:ListObjects
+                  - s3:PutObject
                 Resource:
                   - !GetAtt EmailS3Bucket.Arn
                   - !Sub "${EmailS3Bucket.Arn}/*"
                   - !GetAtt TranscriptionS3Bucket.Arn
                   - !Sub "${TranscriptionS3Bucket.Arn}/*"
+                  - !GetAtt SupportAttachmentsS3Bucket.Arn
+                  - !Sub "${SupportAttachmentsS3Bucket.Arn}/*"
       Tags:
         - Key: Name
           Value: !Sub "${ProjectName}-${Environment}-lambda-role"
@@ -355,6 +379,7 @@ Resources:
           DEFAULT_TO_EMAIL: !Ref DefaultToEmail
           FROM_EMAIL: !Ref SesFromEmail
           DEFAULT_SUPPORT_TO_EMAIL: !Ref DefaultSupportToEmail
+          ATTACHMENTS_S3_BUCKET: !Ref SupportAttachmentsS3Bucket
       Code:
         ZipFile: |
           // Placeholder Lambda function

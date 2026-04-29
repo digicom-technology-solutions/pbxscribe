@@ -3,7 +3,7 @@
 /**
  * Create a new ticket message
  * @param {Pool} pool - pg.Pool instance
- * @param {{ client_id: number, ticket_id: string, message_content: string, message_timestamp: string, attachment_filename?: string, attachment_contenttype?: string, attachment_url?: string }} fields
+ * @param {{ client_id: number, ticket_id: string, message_content: string, message_timestamp: string, attachment_filename?: string, attachment_contenttype?: string }} fields
  * @returns {Promise<Object>} Created ticket message row
  */
 async function createTicketMessage(
@@ -14,20 +14,20 @@ async function createTicketMessage(
     message_timestamp,
     attachment_filename,
     attachment_contenttype,
-    attachment_url,
+    attachment_upload_url,
   },
 ) {
   const result = await pool.query(
-    `INSERT INTO ticket_messages (ticket_id, message_content, message_timestamp, attachment_filename, attachment_contenttype, attachment_url)
+    `INSERT INTO ticket_messages (ticket_id, message_content, message_timestamp, attachment_filename, attachment_contenttype, attachment_upload_url)
      VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING id, ticket_id, message_content, message_timestamp, attachment_filename, attachment_contenttype, attachment_url, created_at, updated_at`,
+     RETURNING id, ticket_id, message_content, message_timestamp, attachment_filename, attachment_contenttype, attachment_upload_url, created_at, updated_at`,
     [
       ticket_id,
       message_content,
       message_timestamp,
       attachment_filename,
       attachment_contenttype,
-      attachment_url,
+      attachment_upload_url,
     ],
   );
   return result.rows[0];
@@ -41,7 +41,7 @@ async function createTicketMessage(
  */
 async function findTicketMessageById(pool, id) {
   const result = await pool.query(
-    `SELECT id, ticket_id, message_content, message_timestamp, attachment_filename, attachment_contenttype, attachment_url, created_at, updated_at
+    `SELECT id, ticket_id, message_content, message_timestamp, attachment_filename, attachment_contenttype, attachment_upload_url, created_at, updated_at
      FROM ticket_messages
      WHERE id = $1`,
     [id],
@@ -53,7 +53,7 @@ async function findTicketMessageById(pool, id) {
  * Update a ticket message (partial updates supported)
  * @param {Pool} pool
  * @param {string} id - UUID
- * @param {{ message_content?: string, message_timestamp?: string, attachment_filename?: string, attachment_contenttype?: string, attachment_url?: string }} fields - Fields to update
+ * @param {{ message_content?: string, message_timestamp?: string, attachment_filename?: string, attachment_contenttype?: string, attachment_upload_url?: string }} fields - Fields to update
  * @returns {Promise<Object|null>} Updated ticket message row, or null if not found
  */
 async function updateTicketMessage(pool, id, fields) {
@@ -62,7 +62,7 @@ async function updateTicketMessage(pool, id, fields) {
     "message_timestamp",
     "attachment_filename",
     "attachment_contenttype",
-    "attachment_url",
+    "attachment_upload_url",
   ];
   const updates = [];
   const values = [];
@@ -85,7 +85,7 @@ async function updateTicketMessage(pool, id, fields) {
     `UPDATE ticket_messages
      SET ${updates.join(", ")}
      WHERE id = $${values.length}
-     RETURNING id, ticket_id, message_content, message_timestamp, attachment_filename, attachment_contenttype, attachment_url, created_at, updated_at`,
+     RETURNING id, ticket_id, message_content, message_timestamp, attachment_filename, attachment_contenttype, attachment_upload_url, created_at, updated_at`,
     values,
   );
   return result.rows[0] || null;
@@ -94,7 +94,7 @@ async function updateTicketMessage(pool, id, fields) {
 /**
  * List ticket messages with pagination and optional status filter
  * @param {Pool} pool
- * @param {number} client_id
+ * @param {number} ticket_id
  * @param {{ limit?: number, offset?: number, status?: string }} options
  * @returns {Promise<{ ticketMessages: Object[], total: number }>}
  */
@@ -117,7 +117,7 @@ async function listTicketMessages(
   // Run data query and count query in parallel
   const [dataResult, countResult] = await Promise.all([
     pool.query(
-      `SELECT id, ticket_id, message_content, message_timestamp, attachment_filename, attachment_contenttype, attachment_url, created_at, updated_at
+      `SELECT id, ticket_id, message_content, message_timestamp, attachment_filename, attachment_contenttype, attachment_upload_url, created_at, updated_at
        FROM ticket_messages
        ${where}
        ORDER BY created_at DESC

@@ -2,6 +2,12 @@
 const sesClientModule = require("@aws-sdk/client-ses");
 const nodemailer = require("nodemailer");
 const {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+} = require("@aws-sdk/client-s3");
+const {getSignedUrl} = require("@aws-sdk/s3-request-presigner");
+const {
   createTicketMessage,
   findTicketMessageById,
   updateTicketMessage,
@@ -19,6 +25,10 @@ const ses = new sesClientModule.SESClient({
 });
 const transporter = nodemailer.createTransport({
   SES: {ses, aws: sesClientModule},
+});
+const s3Client = new S3Client({
+  region,
+  requestChecksumCalculation: "WHEN_REQUIRED",
 });
 
 const email_from_name = "PBXScribe Support";
@@ -186,6 +196,7 @@ const ticketMessageSchema = {
     message_timestamp: {type: "string", format: "date-time"},
     attachment_filename: {type: "string"},
     attachment_contenttype: {type: "string"},
+    attachment_upload_url: {type: "string"},
     attachment_url: {type: "string"},
     created_at: {type: "string", format: "date-time"},
     updated_at: {type: "string", format: "date-time"},
@@ -216,7 +227,6 @@ async function ticketMessageRoutes(fastify) {
             message_timestamp: {type: "string", format: "date-time"},
             attachment_filename: {type: "string"},
             attachment_contenttype: {type: "string"},
-            attachment_url: {type: "string"},
           },
           additionalProperties: false,
         },
@@ -232,10 +242,8 @@ async function ticketMessageRoutes(fastify) {
         message_timestamp,
         attachment_filename,
         attachment_contenttype,
-        attachment_url,
       } = request.body;
 
-      console.log("Creating ticket message with data:", attachment_url);
       console.log(
         "Creating ticket message with content type:",
         attachment_contenttype,
@@ -245,6 +253,17 @@ async function ticketMessageRoutes(fastify) {
         attachment_filename,
       );
 
+      const command = new PutObjectCommand({
+        Bucket: process.env.ATTACHMENTS_S3_BUCKET,
+        Key: `support_attachments/${attachment_filename}`,
+        ContentType: attachment_contenttype,
+      });
+      const attachment_upload_url = await getSignedUrl(s3Client, command, {
+        expiresIn: 300,
+        signableHeaders: new Set(["content-type"]),
+      });
+      console.log("Generated presigned URL:", attachment_upload_url);
+
       try {
         const ticketMessage = await createTicketMessage(fastify.pg, {
           ticket_id,
@@ -252,14 +271,13 @@ async function ticketMessageRoutes(fastify) {
           message_timestamp,
           attachment_filename,
           attachment_contenttype,
-          attachment_url,
+          attachment_upload_url,
         });
-
+        console.log("Created ticket message:", JSON.stringify(ticketMessage));
         const supportTicket = await findSupportTicketById(
           fastify.pg,
           ticket_id,
         );
-
         const client = await findClientById(
           fastify.pg,
           supportTicket.client_id,
@@ -413,6 +431,68 @@ async function ticketMessageRoutes(fastify) {
       }
 
       return ticketMessage;
+    },
+  );
+
+  // GET /ticket-messages/attachment/message/:id — get ticket message by ID
+  fastify.get(
+    "/ticket-messages/attachment/message/:id",
+    {
+      preHandler: [fastify.authenticate],
+      schema: {
+        tags: ["Ticket Messages"],
+        summary: "Get the presigned URL for a ticket message attachment",
+        description:
+          "Returns a presigned URL for a single ticket message attachment by ID.",
+        security: [{bearerAuth: []}, {apiKeyAuth: []}],
+        params: {
+          type: "object",
+          properties: {
+            id: {type: "integer"},
+          },
+          required: ["id"],
+        },
+        response: {
+          200: ticketMessageSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const ticketMessage = await findTicketMessageById(
+        fastify.pg,
+        request.params.id,
+      );
+
+      if (!ticketMessage) {
+        return reply.status(404).send({
+          error: {
+            message: "Ticket message not found",
+            statusCode: 404,
+          },
+        });
+      }
+
+      const {attachment_filename, attachment_contenttype} = ticketMessage;
+
+      if (!attachment_filename || !attachment_contenttype) {
+        return reply.status(404).send({
+          error: {
+            message: "Ticket message attachment not found",
+            statusCode: 404,
+          },
+        });
+      }
+
+      const command = new GetObjectCommand({
+        Bucket: process.env.ATTACHMENTS_S3_BUCKET,
+        Key: `support_attachments/${attachment_filename}`,
+      });
+
+      const imageURL = await getSignedUrl(s3Client, command, {
+        expiresIn: 3600,
+      });
+
+      return {...ticketMessage, attachment_url: imageURL};
     },
   );
 
