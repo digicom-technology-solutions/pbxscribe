@@ -20,6 +20,7 @@ const userSchema = {
     firstname: {type: "string"},
     lastname: {type: "string"},
     phone: {type: "string"},
+    voicemail_number_id: {type: "integer"},
     sms_notification: {type: "boolean"},
     timezone: {
       type: "string",
@@ -60,6 +61,7 @@ async function userRoutes(fastify) {
             lastname: {type: "string", minLength: 1, maxLength: 255},
             password: {type: "string", minLength: 8, maxLength: 255},
             phone: {type: "string", minLength: 10, maxLength: 15},
+            voicemail_number_id: {type: "integer"},
             sms_notification: {type: "boolean"},
             timezone: {
               type: "string",
@@ -125,6 +127,7 @@ async function userRoutes(fastify) {
           firstname,
           lastname,
           phone: phone || null,
+          voicemail_number_id: null,
           sms_notification: sms_notification || false,
           timezone: timezone || "UTC",
           user_type: user_type || "console",
@@ -312,6 +315,7 @@ async function userRoutes(fastify) {
             firstname: {type: "string", minLength: 1, maxLength: 255},
             lastname: {type: "string", minLength: 1, maxLength: 255},
             phone: {type: "string", minLength: 10, maxLength: 15},
+            voicemail_number_id: {type: "integer"},
             sms_notification: {type: "boolean"},
             password: {type: "string", minLength: 8, maxLength: 255},
             timezone: {

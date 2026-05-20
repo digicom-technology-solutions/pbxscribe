@@ -8,6 +8,8 @@ CREATE TABLE phone_numbers (
   voice_capabilities BOOLEAN NOT NULL,
   sms_capabilities BOOLEAN NOT NULL,
   mms_capabilities BOOLEAN NOT NULL,
+  is_associated BOOLEAN NOT NULL DEFAULT false,
+  greetings_file_name VARCHAR(255),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT phone_numbers_phone_number_unique UNIQUE (phone_number),

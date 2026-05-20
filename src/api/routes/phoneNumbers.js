@@ -1,10 +1,32 @@
 // User CRUD routes
 const {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+} = require("@aws-sdk/client-s3");
+const {getSignedUrl} = require("@aws-sdk/s3-request-presigner");
+const {
   showPhoneNumbers,
   buyAndAssignPhoneNumber,
   listPhoneNumbers,
+  findPhoneNumberById,
+  findPhoneNumberByNumber,
+  updatePhoneNumber,
+  associateTwilioFlow,
   deletePhoneNumber,
+  addGreetingsFile,
 } = require("../repositories/phoneNumbersRepository");
+const {
+  updateUser,
+  findUserByVoicemailNumberId,
+} = require("../repositories/userRepository");
+const {findClientById} = require("../repositories/clientRepository");
+
+const region = process.env.REGION;
+const s3Client = new S3Client({
+  region,
+  requestChecksumCalculation: "WHEN_REQUIRED",
+});
 
 const twilioSchema = {
   type: "object",
@@ -19,6 +41,8 @@ const twilioSchema = {
     voice_capabilities: {type: "boolean"},
     sms_capabilities: {type: "boolean"},
     mms_capabilities: {type: "boolean"},
+    is_associated: {type: "boolean"},
+    greetings_file_name: {type: "string"},
     client_id: {type: "integer"},
     created_at: {type: "string", format: "date-time"},
     updated_at: {type: "string", format: "date-time"},
@@ -232,6 +256,292 @@ async function twilioRoutes(fastify) {
     },
   );
 
+  // GET /phonenumber/id/:id — get phone number by ID
+  fastify.get(
+    "/phonenumber/id/:id",
+    {
+      preHandler: [fastify.authenticate],
+      schema: {
+        tags: ["Phone Numbers"],
+        summary: "Get a phone number",
+        description: "Returns a single phone number by ID.",
+        security: [{bearerAuth: []}, {apiKeyAuth: []}],
+        params: {
+          type: "object",
+          properties: {
+            id: {type: "integer"},
+          },
+          required: ["id"],
+        },
+        response: {
+          200: twilioSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const phoneNumber = await findPhoneNumberById(
+        fastify.pg,
+        request.params.id,
+      );
+
+      if (!phoneNumber) {
+        return reply.status(404).send({
+          error: {
+            message: "Phone number not found",
+            statusCode: 404,
+          },
+        });
+      }
+
+      return phoneNumber;
+    },
+  );
+
+  // GET /phonenumber/greeting/id/:id — get greeting file name for a phone number by ID
+  fastify.get(
+    "/phonenumber/greeting/id/:id",
+    {
+      preHandler: [fastify.authenticate],
+      schema: {
+        tags: ["Phone Numbers"],
+        summary: "Get greeting file name for a phone number",
+        description:
+          "Returns the greeting file name for a phone number by ID. Requires authentication.",
+        security: [{bearerAuth: []}, {apiKeyAuth: []}],
+        params: {
+          type: "object",
+          properties: {
+            id: {type: "integer"},
+          },
+          required: ["id"],
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              greetings_url: {type: "string"},
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const phone_number = await findPhoneNumberById(
+        fastify.pg,
+        request.params.id,
+      );
+      if (!phone_number) {
+        return reply.status(404).send({
+          error: {
+            message: "Phone number not found",
+            statusCode: 404,
+          },
+        });
+      }
+
+      try {
+        const command = new GetObjectCommand({
+          Bucket: process.env.GREETINGS_S3_BUCKET,
+          Key: phone_number.greetings_file_name,
+        });
+        const greetings_url = await getSignedUrl(s3Client, command, {
+          expiresIn: 3600,
+        });
+        console.log("Generated presigned URL:", greetings_url);
+
+        return reply.status(201).send({
+          greetings_url,
+        });
+      } catch (error) {
+        if (error.code === "23505") {
+          return reply.status(409).send({
+            error: {
+              message: "A phone number with this SID already exists",
+              statusCode: 409,
+            },
+          });
+        }
+        throw error;
+      }
+    },
+  );
+
+  // PUT /phonenumber/greeting/id/:id — update phone number with greetings file
+  fastify.put(
+    "/phonenumber/greeting/id/:id",
+    {
+      preHandler: [fastify.authenticate],
+      schema: {
+        tags: ["Phone Numbers"],
+        summary: "Update greetings file for a phone number",
+        description:
+          "Updates the greetings file for a phone number. Requires authentication.",
+        security: [{bearerAuth: []}, {apiKeyAuth: []}],
+        params: {
+          type: "object",
+          properties: {
+            id: {type: "integer"},
+          },
+          required: ["id"],
+        },
+        body: {
+          type: "object",
+          properties: {
+            client_id: {type: "integer"},
+          },
+          additionalProperties: false,
+          minProperties: 1,
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              greetings_upload_url: {type: "string"},
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const {client_id} = request.body;
+
+      const client = await findClientById(fastify.pg, client_id);
+      if (!client) {
+        return reply.status(404).send({
+          error: {
+            message: "Client not found",
+            statusCode: 404,
+          },
+        });
+      }
+
+      const phone_number = await findPhoneNumberById(
+        fastify.pg,
+        request.params.id,
+      );
+      if (!phone_number) {
+        return reply.status(404).send({
+          error: {
+            message: "Phone number not found",
+            statusCode: 404,
+          },
+        });
+      }
+
+      const formatted_client_name = client.client_name
+        .replace(/\s+/g, "_")
+        .toLowerCase();
+
+      try {
+        const greetings_upload = await addGreetingsFile({
+          twilio_phonenumber: phone_number.phone_number,
+          mailbox_email: client.client_email,
+          client_name: formatted_client_name,
+        });
+
+        console.log("Greetings file added:", greetings_upload);
+
+        const command = new PutObjectCommand({
+          Bucket: process.env.GREETINGS_S3_BUCKET,
+          Key: `${formatted_client_name}.mp3`,
+          ContentType: "audio/mpeg",
+        });
+        const greetings_upload_url = await getSignedUrl(s3Client, command, {
+          expiresIn: 3600,
+          signableHeaders: new Set(["content-type"]),
+        });
+        console.log("Generated presigned URL:", greetings_upload_url);
+
+        const phoneNumber = await updatePhoneNumber(
+          fastify.pg,
+          request.params.id,
+          {greetings_file_name: `${formatted_client_name}.mp3`},
+        );
+
+        return reply.status(201).send({
+          greetings_upload_url,
+        });
+      } catch (error) {
+        if (error.code === "23505") {
+          return reply.status(409).send({
+            error: {
+              message: "A phone number with this SID already exists",
+              statusCode: 409,
+            },
+          });
+        }
+        throw error;
+      }
+    },
+  );
+
+  // PUT /phonenumbers/id/:id — update phone number
+  fastify.put(
+    "/phonenumber/id/:id",
+    {
+      preHandler: [fastify.authenticate],
+      schema: {
+        tags: ["Phone Numbers"],
+        summary: "Associate or disassociate a phone number with a user",
+        description:
+          "Associate or disassociate a phone number with a user by phone number ID.",
+        security: [{bearerAuth: []}, {apiKeyAuth: []}],
+        params: {
+          type: "object",
+          properties: {
+            id: {type: "integer"},
+          },
+          required: ["id"],
+        },
+        body: {
+          type: "object",
+          properties: {
+            is_associated: {type: "boolean"},
+            user_id: {type: "integer"},
+          },
+          additionalProperties: false,
+          minProperties: 1,
+        },
+        response: {
+          200: twilioSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const {user_id, is_associated} = request.body;
+
+      const phone = await findPhoneNumberById(fastify.pg, request.params.id);
+      if (!phone) {
+        return reply.status(404).send({
+          error: {
+            message: "Phone number not found",
+            statusCode: 404,
+          },
+        });
+      }
+      console.log("Phone number found:", JSON.stringify(phone));
+
+      const user = await updateUser(fastify.pg, user_id, {
+        voicemail_number_id: is_associated === true ? phone.id : null,
+      });
+
+      if (is_associated === true) {
+        console.log(
+          `Associating Twilio Flow for user_id ${user_id} with phone_number_sid ${phone.phone_number_sid}`,
+        );
+        await associateTwilioFlow(phone.phone_number_sid);
+      }
+
+      const phoneNumber = await updatePhoneNumber(
+        fastify.pg,
+        request.params.id,
+        {is_associated: is_associated},
+      );
+
+      return phoneNumber;
+    },
+  );
+
   // DELETE /phonenumber/number/:phone_number — delete phone number
   fastify.delete(
     "/phonenumber/number/:phone_number",
@@ -255,6 +565,39 @@ async function twilioRoutes(fastify) {
       },
     },
     async (request, reply) => {
+      const voicemailNumber = await findPhoneNumberByNumber(
+        fastify.pg,
+        request.params.phone_number,
+      );
+
+      console.log(
+        "Voicemail number found for deletion:",
+        JSON.stringify(voicemailNumber),
+      );
+
+      if (voicemailNumber.hasOwnProperty("id") && voicemailNumber.id) {
+        const user = await findUserByVoicemailNumberId(
+          fastify.pg,
+          voicemailNumber.id,
+        );
+
+        console.log(
+          "User found with voicemail number for deletion:",
+          JSON.stringify(user),
+        );
+
+        if (user && user.id) {
+          const updatedUser = await updateUser(fastify.pg, user.id, {
+            voicemail_number_id: null,
+          });
+
+          console.log(
+            `Updated user ${user.id} to disassociate voicemail number:`,
+            JSON.stringify(updatedUser),
+          );
+        }
+      }
+
       const deleted = await deletePhoneNumber(
         fastify.pg,
         request.params.phone_number,

@@ -121,6 +121,10 @@ Parameters:
     NoEcho: true
     Description: Default recipient email address for support Lambda (used when no user email is available)
 
+  TwilioFunctionUrl:
+    Type: String
+    Description: Twilio Function URL for handling Twilio greetings updates
+
   FrontendUrl:
     Type: String
     NoEcho: true
@@ -236,6 +240,27 @@ Resources:
         - Key: Environment
           Value: !Ref Environment
 
+  GreetingsFileS3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "${ProjectName}-${Environment}-greetings-file"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${Environment}-greetings-file"
+        - Key: Environment
+          Value: !Ref Environment
+
   # =============================================================================
   # S3 Bucket Policy for SES
   # =============================================================================
@@ -326,6 +351,8 @@ Resources:
                   - !Sub "${TranscriptionS3Bucket.Arn}/*"
                   - !GetAtt SupportAttachmentsS3Bucket.Arn
                   - !Sub "${SupportAttachmentsS3Bucket.Arn}/*"
+                  - !GetAtt GreetingsFileS3Bucket.Arn
+                  - !Sub "${GreetingsFileS3Bucket.Arn}/*"
       Tags:
         - Key: Name
           Value: !Sub "${ProjectName}-${Environment}-lambda-role"
@@ -380,6 +407,9 @@ Resources:
           FROM_EMAIL: !Ref SesFromEmail
           DEFAULT_SUPPORT_TO_EMAIL: !Ref DefaultSupportToEmail
           ATTACHMENTS_S3_BUCKET: !Ref SupportAttachmentsS3Bucket
+          GREETINGS_S3_BUCKET: !Ref GreetingsFileS3Bucket
+          FUNCTION_ENDPOINT: !Ref TwilioFunctionUrl
+
       Code:
         ZipFile: |
           // Placeholder Lambda function

@@ -6,6 +6,7 @@ CREATE TABLE users (
   pbx_email VARCHAR(255) NOT NULL,
   email VARCHAR(255) NOT NULL,
   phone VARCHAR(20),
+  voicemail_number_id VARCHAR(20),
   sms_notification BOOLEAN NOT NULL DEFAULT false,
   timezone VARCHAR(50) NOT NULL DEFAULT 'UTC',
   user_type VARCHAR(20) NOT NULL DEFAULT 'console',
@@ -28,3 +29,4 @@ CREATE TABLE users (
 CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);
 CREATE INDEX IF NOT EXISTS idx_users_status ON users (user_status);
 CREATE INDEX IF NOT EXISTS idx_users_client_id ON users (client_id);
+CREATE INDEX IF NOT EXISTS idx_users_voicemail_number_id ON users (voicemail_number_id);

@@ -1,5 +1,6 @@
 // Client repository - database operations for clients table
 const twilio = require("twilio");
+const axios = require("axios");
 
 let twilioClient;
 
@@ -98,8 +99,8 @@ async function buyAndAssignPhoneNumber(
     });
 
     const result = await pool.query(
-      `INSERT INTO phone_numbers (client_id, phone_number, phone_number_sid, phone_type, friendly_name, voice_capabilities, sms_capabilities, mms_capabilities, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `INSERT INTO phone_numbers (client_id, phone_number, phone_number_sid, phone_type, friendly_name, voice_capabilities, sms_capabilities, mms_capabilities, is_associated, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING id, client_id, phone_number, phone_number_sid, phone_type, friendly_name, voice_capabilities, sms_capabilities, mms_capabilities, created_at, updated_at`,
       [
         client_id,
@@ -110,6 +111,7 @@ async function buyAndAssignPhoneNumber(
         voice_capabilities,
         sms_capabilities,
         mms_capabilities,
+        false,
         new Date(),
         new Date(),
       ],
@@ -121,6 +123,40 @@ async function buyAndAssignPhoneNumber(
     throw new Error(
       `Failed to buy and assign phone number for client ID ${client_id}: ${error.message}`,
     );
+  }
+}
+
+/**
+ * Fetches available Twilio numbers based on country and search criteria.
+ * Optimized for readability, API accuracy, and error handling.
+ */
+async function associateTwilioFlow(phonenumberSid) {
+  const client = getTwilioClient();
+
+  console.log(
+    `Associating Twilio Flow with Phone Number SID: ${phonenumberSid}`,
+  );
+
+  try {
+    const incomingPhoneNumber = await client
+      .incomingPhoneNumbers(phonenumberSid)
+      .update({
+        voiceUrl:
+          "https://webhooks.twilio.com/v1/Accounts/AC830c545f57d9bf04e8c83ec71d3423db/Flows/FW7a03837cfccf15d87f79f073bfae3e56",
+      });
+
+    console.log(
+      `Twilio Phone Number Configured: ${JSON.stringify(incomingPhoneNumber)}`,
+    );
+
+    return {incomingPhoneNumber: incomingPhoneNumber.sid};
+  } catch (error) {
+    console.error(
+      `[Twilio Error] Phone Number SID: ${phonenumberSid}:`,
+      error.message,
+    );
+    // Re-throw the original error or a custom one without double-nesting strings
+    throw new Error(`Failed to fetch numbers: ${error.message}`);
   }
 }
 
@@ -145,7 +181,7 @@ async function listPhoneNumbers(
   // Run data query and count query in parallel
   const [dataResult, countResult] = await Promise.all([
     pool.query(
-      `SELECT id, phone_number, phone_number_sid, phone_type, friendly_name, voice_capabilities, sms_capabilities, mms_capabilities, created_at, updated_at
+      `SELECT id, phone_number, phone_number_sid, phone_type, friendly_name, voice_capabilities, sms_capabilities, mms_capabilities, is_associated, greetings_file_name, created_at, updated_at
        FROM phone_numbers
        ${where}
        ORDER BY created_at DESC
@@ -165,6 +201,74 @@ async function listPhoneNumbers(
 }
 
 /**
+ * Find a phone number by ID
+ * @param {Pool} pool
+ * @param {number} id
+ * @returns {Promise<Object|null>}
+ */
+async function findPhoneNumberById(pool, id) {
+  const result = await pool.query(
+    `SELECT id, client_id, phone_number, phone_number_sid, phone_type, friendly_name, voice_capabilities, sms_capabilities, mms_capabilities, is_associated, greetings_file_name, created_at, updated_at
+     FROM phone_numbers
+     WHERE id = $1`,
+    [id],
+  );
+  return result.rows[0] || null;
+}
+
+/**
+ * Find a phone number by number
+ * @param {Pool} pool
+ * @param {string} number
+ * @returns {Promise<Object|null>}
+ */
+async function findPhoneNumberByNumber(pool, number) {
+  const result = await pool.query(
+    `SELECT id, client_id, phone_number, phone_number_sid, phone_type, friendly_name, voice_capabilities, sms_capabilities, mms_capabilities, is_associated, greetings_file_name, created_at, updated_at
+     FROM phone_numbers
+     WHERE phone_number = $1`,
+    [number],
+  );
+  return result.rows[0] || null;
+}
+
+/**
+ * Update Phone Number fields by ID
+ * @param {Pool} pool
+ * @param {number} id
+ * @param {Object} fields - Fields to update (is_associated, greetings_file_name)
+ * @returns {Promise<Object|null>}
+ */
+async function updatePhoneNumber(pool, id, fields) {
+  const allowed = ["is_associated", "greetings_file_name"];
+  const updates = [];
+  const values = [];
+
+  for (const key of allowed) {
+    if (fields[key] !== undefined) {
+      values.push(fields[key]);
+      updates.push(`${key} = $${values.length}`);
+    }
+  }
+
+  if (updates.length === 0) {
+    return findPhoneNumberById(pool, id);
+  }
+
+  // Always update updated_at
+  updates.push(`updated_at = NOW()`);
+  values.push(id);
+  const result = await pool.query(
+    `UPDATE phone_numbers
+	 SET ${updates.join(", ")}
+	 WHERE id = $${values.length}
+	 RETURNING id, phone_number, phone_number_sid, phone_type, friendly_name, voice_capabilities, sms_capabilities, mms_capabilities, is_associated, greetings_file_name, created_at, updated_at`,
+    values,
+  );
+  return result.rows[0] || null;
+}
+
+/**
  * Delete a phone number by number
  * @param {Pool} pool
  * @param {string} number - Phone number
@@ -172,14 +276,13 @@ async function listPhoneNumbers(
  */
 async function deletePhoneNumber(pool, number) {
   const query_result = await pool.query(
-    `SELECT id, phone_number, phone_number_sid, phone_type, friendly_name, voice_capabilities, sms_capabilities, mms_capabilities, created_at, updated_at
+    `SELECT id, phone_number, phone_number_sid, phone_type, friendly_name, voice_capabilities, sms_capabilities, mms_capabilities, is_associated, greetings_file_name, created_at, updated_at
        FROM phone_numbers
        WHERE phone_number = $1
        ORDER BY created_at DESC
        LIMIT 1`,
     [number],
   );
-
   if (query_result.rows.length === 0) {
     return false;
   }
@@ -195,9 +298,31 @@ async function deletePhoneNumber(pool, number) {
   return result.rowCount > 0;
 }
 
+async function addGreetingsFile(params = {}) {
+  const response = await axios.post(
+    process.env.FUNCTION_ENDPOINT,
+    new URLSearchParams(params),
+    {
+      auth: {
+        username: process.env.TWILIO_ACCOUNT_SID,
+        password: process.env.TWILIO_AUTH_TOKEN,
+      },
+      headers: {"Content-Type": "application/x-www-form-urlencoded"},
+    },
+  );
+
+  console.log("Function response:", response.data);
+  return response.data;
+}
+
 module.exports = {
   showPhoneNumbers,
   buyAndAssignPhoneNumber,
   listPhoneNumbers,
+  findPhoneNumberById,
+  findPhoneNumberByNumber,
+  updatePhoneNumber,
+  associateTwilioFlow,
   deletePhoneNumber,
+  addGreetingsFile,
 };
