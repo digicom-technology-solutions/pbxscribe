@@ -45,7 +45,7 @@ Parameters:
 
   GitHubOrg:
     Type: String
-    Default: digicom-dts
+    Default: digicom-technology-solutions
     Description: GitHub organization or username
 
   GitHubRepo:

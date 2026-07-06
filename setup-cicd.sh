@@ -2,13 +2,13 @@
 
 # Configuration - Update these or pass as environment variables
 PROJECT_NAME="pbxscribe-api-backend"
-ENV="dev" # or prod
-GITHUB_REPO="digicom-dts/pbxscribe"
+ENV="${ENV:-dev}" # or prod — override with: ENV="prod" bash setup-cicd.sh
+GITHUB_REPO="digicom-technology-solutions/pbxscribe"
 STACK_NAME="${PROJECT_NAME}-${ENV}-github-oidc"
 
 echo "Step 1: Deploying CloudFormation stack..."
 aws cloudformation deploy \
-  --template-file infra/github-oidc.yml \
+  --template-file infra/foundation/github-oidc.yml \
   --stack-name "$STACK_NAME" \
   --capabilities CAPABILITY_NAMED_IAM \
   --parameter-overrides \
