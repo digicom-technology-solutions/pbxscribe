@@ -90,7 +90,13 @@ if $DROP_TABLES && ! $RUN_MIGRATE; then
 fi
 
 aws_cmd() {
-  aws --profile "$AWS_PROFILE" --region "$AWS_REGION" "$@"
+  # Only pass --profile when explicitly set to a non-default value.
+  # In CI, credentials come from env vars and no profile file exists.
+  if [ "${AWS_PROFILE:-default}" != "default" ]; then
+    aws --profile "$AWS_PROFILE" --region "$AWS_REGION" "$@"
+  else
+    aws --region "$AWS_REGION" "$@"
+  fi
 }
 
 # ---------------------------------------------------------------------------
