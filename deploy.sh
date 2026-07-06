@@ -18,6 +18,13 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
+# Helpers (defined early so they're available everywhere below)
+# ---------------------------------------------------------------------------
+log()  { echo "▶ $*"; }
+ok()   { echo "✓ $*"; }
+fail() { echo "✗ $*" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------
 # Resolve environment (needed before loading the env file)
 # ---------------------------------------------------------------------------
 if [[ "${1:-}" =~ ^(dev|staging|prod)$ ]]; then
@@ -28,7 +35,8 @@ fi
 
 # ---------------------------------------------------------------------------
 # Load .env.<environment> (only sets variables not already present in the
-# shell environment, so shell env vars always take precedence)
+# shell environment, so shell env vars always take precedence).
+# In CI, env vars are injected via GitHub Secrets — the file is optional.
 # ---------------------------------------------------------------------------
 ENV_FILE=".env.${ENVIRONMENT}"
 if [ -f "$ENV_FILE" ]; then
@@ -43,7 +51,7 @@ if [ -f "$ENV_FILE" ]; then
     [ -z "${!key+x}" ] && export "$key=$value"
   done < "$ENV_FILE"
 else
-  fail "Environment file '$ENV_FILE' not found"
+  log "No $ENV_FILE found — relying on shell environment variables"
 fi
 
 # ---------------------------------------------------------------------------
@@ -80,13 +88,6 @@ done
 if $DROP_TABLES && ! $RUN_MIGRATE; then
   fail "--drop-tables requires --migrate"
 fi
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-log()  { echo "▶ $*"; }
-ok()   { echo "✓ $*"; }
-fail() { echo "✗ $*" >&2; exit 1; }
 
 aws_cmd() {
   aws --profile "$AWS_PROFILE" --region "$AWS_REGION" "$@"
