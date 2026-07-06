@@ -65,9 +65,10 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: GitHubActions-dev
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Deploy Lambda functions to dev
@@ -87,9 +88,10 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: GitHubActions-prod
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Deploy Lambda functions to prod
