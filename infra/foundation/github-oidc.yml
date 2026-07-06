@@ -119,8 +119,8 @@ Resources:
                   - lambda:UpdateAlias
                   - lambda:AddPermission
                 Resource:
-                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-${Environment}-api"
-                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-${Environment}-api:*"
+                  # Wildcard region: OIDC stack may be in a different region than the Lambdas
+                  - !Sub "arn:aws:lambda:*:${AWS::AccountId}:function:${ProjectName}-${Environment}-*"
 
               - Sid: CodeDeployDeployments
                 Effect: Allow
@@ -147,7 +147,7 @@ Resources:
                 Action:
                   - ssm:GetParameter
                 Resource:
-                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${Environment}/*"
+                  - !Sub "arn:aws:ssm:*:${AWS::AccountId}:parameter/${ProjectName}/${Environment}/*"
       Tags:
         - Key: Name
           Value: !Sub "${ProjectName}-${Environment}-github-deploy"
