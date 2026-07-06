@@ -1,6 +1,8 @@
-const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY, {
-  maxNetworkRetries: 1,
-});
+let _stripe;
+const getStripe = () => {
+  if (!_stripe) _stripe = require("stripe")(process.env.STRIPE_SECRET_KEY, {maxNetworkRetries: 1});
+  return _stripe;
+};
 
 /**
  * Find an invoice by ID
@@ -9,7 +11,7 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY, {
  */
 async function findInvoiceById(id) {
   try {
-    const invoice = await stripe.invoices.retrieve(id);
+    const invoice = await getStripe().invoices.retrieve(id);
     return invoice || null;
   } catch (error) {
     if (error.code === "resource_missing") {
@@ -27,7 +29,7 @@ async function findInvoiceById(id) {
  * @returns {Promise<{ invoices: Object[], total: number }>}
  */
 async function listInvoices(customer_id, {limit = 20, status} = {}) {
-  const invoices = await stripe.invoices.list({
+  const invoices = await getStripe().invoices.list({
     customer: customer_id,
     limit,
     status,
@@ -52,7 +54,7 @@ async function applyReferralCredit(
   customer_id,
   {creditCents = 1000, currency = "usd", referredClientName = ""} = {},
 ) {
-  return stripe.customers.createBalanceTransaction(customer_id, {
+  return getStripe().customers.createBalanceTransaction(customer_id, {
     amount: -creditCents,
     currency,
     description: `Referral bonus${referredClientName ? `: referred ${referredClientName}` : ""}`,
@@ -74,7 +76,7 @@ async function updateReferralCredit(
   const adjustmentCents = previousCreditCents - newCreditCents;
   if (adjustmentCents === 0) return null;
 
-  return stripe.customers.createBalanceTransaction(customer_id, {
+  return getStripe().customers.createBalanceTransaction(customer_id, {
     amount: adjustmentCents,
     currency,
     description: `Referral credit adjustment (${previousCreditCents < newCreditCents ? "increase" : "decrease"} from $${(previousCreditCents / 100).toFixed(2)} to $${(newCreditCents / 100).toFixed(2)})`,

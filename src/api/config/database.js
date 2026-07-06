@@ -14,30 +14,29 @@ let cachedCredentials = null;
  * @returns {Promise<{username: string, password: string}>} Database credentials
  */
 async function getDbCredentials() {
-  // Return cached credentials if available
   if (cachedCredentials) {
     return cachedCredentials;
   }
 
-  const secretArn = process.env.DB_SECRET_ARN;
+  // Allow direct env var credentials (local dev / CI) to bypass Secrets Manager
+  if (process.env.DB_USER && process.env.DB_PASSWORD) {
+    cachedCredentials = { username: process.env.DB_USER, password: process.env.DB_PASSWORD };
+    return cachedCredentials;
+  }
 
+  const secretArn = process.env.DB_SECRET_ARN;
   if (!secretArn) {
-    throw new Error('DB_SECRET_ARN environment variable is not set');
+    throw new Error('Either DB_USER+DB_PASSWORD or DB_SECRET_ARN must be set');
   }
 
   try {
     console.log('Retrieving database credentials from Secrets Manager');
-
     const command = new GetSecretValueCommand({ SecretId: secretArn });
     const response = await client.send(command);
-
     if (!response.SecretString) {
       throw new Error('Secret string is empty');
     }
-
-    // Parse and cache credentials
     cachedCredentials = JSON.parse(response.SecretString);
-
     console.log('Database credentials retrieved successfully');
     return cachedCredentials;
   } catch (error) {
@@ -53,15 +52,14 @@ async function getDbCredentials() {
 async function getDatabaseConfig() {
   const credentials = await getDbCredentials();
 
+  const isProduction = process.env.NODE_ENV === 'production';
   const config = {
     host: process.env.DB_HOST,
     port: parseInt(process.env.DB_PORT || '5432', 10),
     database: process.env.DB_NAME,
     user: credentials.username,
     password: credentials.password,
-    ssl: {
-      rejectUnauthorized: true,
-    },
+    ssl: isProduction ? { rejectUnauthorized: true } : false,
     // Connection pool settings
     max: 10, // Maximum number of clients in the pool
     idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
