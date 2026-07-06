@@ -2,7 +2,11 @@
 const {getDatabaseConfig} = require("../config/database");
 const {SESv2Client, GetAccountCommand} = require("@aws-sdk/client-sesv2");
 const {S3Client, ListObjectsV2Command} = require("@aws-sdk/client-s3");
-const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+let _stripe;
+const getStripe = () => {
+  if (!_stripe) _stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+  return _stripe;
+};
 
 const client = new SESv2Client({region: process.env.AWS_REGION});
 const s3Client = new S3Client({region: process.env.AWS_REGION});
@@ -454,7 +458,7 @@ async function healthRoutes(fastify) {
     async (request, reply) => {
       try {
         const start = Date.now();
-        await stripe.balance.retrieve();
+        await getStripe().balance.retrieve();
         const latency = Date.now() - start;
 
         console.log(`Stripe health check latency: ${latency}ms`);

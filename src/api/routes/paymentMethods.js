@@ -1,7 +1,11 @@
 const Stripe = require("stripe");
 const {findClientById} = require("../repositories/clientRepository");
 
-const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
+let _stripe;
+const getStripe = () => {
+  if (!_stripe) _stripe = Stripe(process.env.STRIPE_SECRET_KEY);
+  return _stripe;
+};
 
 const stripePaymentMethodSchema = {
   type: "object",
@@ -71,12 +75,12 @@ async function paymentMethodRoutes(fastify) {
 
       let pm;
       try {
-        pm = await stripe.paymentMethods.attach(stripe_payment_method_id, {
+        pm = await getStripe().paymentMethods.attach(stripe_payment_method_id, {
           customer: client.stripe_customer_id,
         });
       } catch (err) {
         if (err.code === "payment_method_already_attached") {
-          pm = await stripe.paymentMethods.retrieve(stripe_payment_method_id);
+          pm = await getStripe().paymentMethods.retrieve(stripe_payment_method_id);
         } else {
           return reply.status(422).send({
             error: {message: err.message, statusCode: 422, stripeCode: err.code},
@@ -85,11 +89,11 @@ async function paymentMethodRoutes(fastify) {
       }
 
       if (is_default) {
-        await stripe.customers.update(client.stripe_customer_id, {
+        await getStripe().customers.update(client.stripe_customer_id, {
           invoice_settings: {default_payment_method: stripe_payment_method_id},
         });
         if (client.stripe_subscription_id) {
-          await stripe.subscriptions.update(client.stripe_subscription_id, {
+          await getStripe().subscriptions.update(client.stripe_subscription_id, {
             default_payment_method: stripe_payment_method_id,
           });
         }
@@ -154,8 +158,8 @@ async function paymentMethodRoutes(fastify) {
       const {type = "card", limit = 20} = request.query;
 
       const [stripeCustomer, stripeList] = await Promise.all([
-        stripe.customers.retrieve(client.stripe_customer_id),
-        stripe.paymentMethods.list({customer: client.stripe_customer_id, type, limit}),
+        getStripe().customers.retrieve(client.stripe_customer_id),
+        getStripe().paymentMethods.list({customer: client.stripe_customer_id, type, limit}),
       ]);
 
       const defaultPmId = stripeCustomer.invoice_settings?.default_payment_method || null;
@@ -210,12 +214,12 @@ async function paymentMethodRoutes(fastify) {
       const client = await getClientWithStripeId(fastify, client_id, reply);
       if (!client) return;
 
-      await stripe.customers.update(client.stripe_customer_id, {
+      await getStripe().customers.update(client.stripe_customer_id, {
         invoice_settings: {default_payment_method: stripe_pm_id},
       });
 
       if (client.stripe_subscription_id) {
-        await stripe.subscriptions.update(client.stripe_subscription_id, {
+        await getStripe().subscriptions.update(client.stripe_subscription_id, {
           default_payment_method: stripe_pm_id,
         });
       }
@@ -244,7 +248,7 @@ async function paymentMethodRoutes(fastify) {
     },
     async (request, reply) => {
       try {
-        await stripe.paymentMethods.detach(request.params.stripe_pm_id);
+        await getStripe().paymentMethods.detach(request.params.stripe_pm_id);
       } catch (err) {
         if (err.code !== "resource_missing") {
           return reply.status(422).send({
