@@ -51,14 +51,23 @@ async function showPhoneNumbers(
       .availablePhoneNumbers(countryCode)
       .local.list(searchOptions);
 
+    const pricing = await client.pricing.v1.phoneNumbers
+      .countries(countryCode)
+      .fetch();
+
     console.log(`Twilio search returned ${JSON.stringify(numbers)}`);
+
+    const localPricing =
+      pricing.phoneNumberPrices.find((p) => p.number_type === "local")
+        ?.current_price || null;
 
     // 2. Map directly to the return object to save memory/cycles
     return numbers.map(({capabilities, friendlyName, phoneNumber, type}) => ({
       capabilities,
       friendly_name: friendlyName,
       phone_number: phoneNumber,
-      type,
+      phone_type: "DID",
+      monthly_price: localPricing ? localPricing : null,
     }));
   } catch (error) {
     // 3. Structured error logging

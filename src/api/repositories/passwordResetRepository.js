@@ -14,6 +14,14 @@ async function requestPasswordReset(
     `INSERT INTO reset_password
        (client_id, user_id, email, token, expires_at, created_at, used_at)
      VALUES ($1, $2, $3, $4, $5, $6, NULL)
+     ON CONFLICT (email)
+     DO UPDATE SET
+       client_id = EXCLUDED.client_id,
+       user_id = EXCLUDED.user_id,
+       token = EXCLUDED.token,
+       expires_at = EXCLUDED.expires_at,
+       created_at = EXCLUDED.created_at,
+       used_at = NULL
      RETURNING id, client_id, user_id, email, token, expires_at, created_at, used_at`,
     [
       client_id,

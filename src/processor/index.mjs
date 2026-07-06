@@ -7,7 +7,7 @@ import {
   GetSecretValueCommand,
 } from "@aws-sdk/client-secrets-manager";
 import {S3Client, GetObjectCommand} from "@aws-sdk/client-s3";
-import sesClientModule from "@aws-sdk/client-ses";
+import {SESv2Client, SendEmailCommand} from "@aws-sdk/client-sesv2";
 import nodemailer from "nodemailer";
 import twilio from "twilio";
 import pkg from "pg";
@@ -17,11 +17,9 @@ const region = process.env.REGION;
 const transcribeClient = new TranscribeClient({region});
 const s3Client = new S3Client({region});
 const secretsClient = new SecretsManagerClient({region});
-const ses = new sesClientModule.SESClient({
-  region,
-});
+const ses = new SESv2Client({region});
 const transporter = nodemailer.createTransport({
-  SES: {ses, aws: sesClientModule},
+  SES: {ses, aws: {SendEmailCommand}},
 });
 
 const twilioClient = twilio(

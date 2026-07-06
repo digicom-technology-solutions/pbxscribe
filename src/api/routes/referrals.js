@@ -1,4 +1,3 @@
-// User CRUD routes
 const {
   createReferral,
   findReferralById,
@@ -7,8 +6,8 @@ const {
   deleteReferral,
 } = require("../repositories/referralRepository");
 const {
-  createInvoice,
-  findInvoiceByType,
+  applyReferralCredit,
+  updateReferralCredit,
   findInvoiceById,
 } = require("../repositories/invoiceRepository");
 const {findClientById} = require("../repositories/clientRepository");
@@ -20,7 +19,7 @@ const referralSchema = {
     referral_bonus: {type: "number"},
     client_id: {type: "integer"},
     referral_client_id: {type: "integer"},
-    invoice_id: {type: "integer"},
+    invoice_id: {type: "string"},
     client: {
       client_id: {type: "integer"},
       client_name: {type: "string"},
@@ -56,7 +55,7 @@ const referralSchema = {
       client_referral_link: {type: "string"},
     },
     invoice: {
-      invoice_id: {type: "integer"},
+      invoice_id: {type: "string"},
       invoice_name: {type: "string"},
       invoice_type: {type: "string"},
       invoice_date: {type: "string", format: "date-time"},
@@ -69,6 +68,46 @@ const referralSchema = {
     updated_at: {type: "string", format: "date-time"},
   },
 };
+
+function formatClient(client) {
+  return {
+    client_id: client?.id,
+    client_name: client?.client_name,
+    client_category: client?.client_category,
+    client_email: client?.client_email,
+    client_address: client?.client_address,
+    client_phone: client?.client_phone,
+    timezone: client?.timezone,
+    client_status: client?.client_status,
+    client_referral_link: client?.client_referral_link,
+  };
+}
+
+function formatInvoice(invoice_id, invoice) {
+  return {
+    invoice_id,
+    invoice_name: invoice?.invoice_name,
+    invoice_type: invoice?.invoice_type,
+    invoice_date: invoice?.invoice_date,
+    plan_id: invoice?.plan_id,
+    invoice_amount: invoice?.invoice_amount,
+    invoice_status: invoice?.invoice_status,
+    invoice_file_url: invoice?.invoice_file_url,
+  };
+}
+
+async function enrichReferral(pool, referral) {
+  const [client, referralClient, invoice] = await Promise.all([
+    findClientById(pool, referral.client_id),
+    findClientById(pool, referral.referral_client_id),
+    referral.invoice_id ? findInvoiceById(referral.invoice_id) : null,
+  ]);
+
+  referral.client = formatClient(client);
+  referral.referral_client = formatClient(referralClient);
+  referral.invoice = formatInvoice(referral.invoice_id, invoice);
+  return referral;
+}
 
 /**
  * Register referral CRUD routes
@@ -105,105 +144,58 @@ async function referralRoutes(fastify) {
 
       if (client_id === referral_client_id) {
         return reply.status(400).send({
+          error: {message: "Client cannot refer themselves", statusCode: 400},
+        });
+      }
+
+      const [client, referralClient] = await Promise.all([
+        findClientById(fastify.pg, client_id),
+        findClientById(fastify.pg, referral_client_id),
+      ]);
+
+      if (!client || !referralClient) {
+        return reply.status(404).send({
           error: {
-            message: "Client cannot refer themselves",
-            statusCode: 400,
+            message: "Client or referral client not found",
+            statusCode: 404,
           },
         });
       }
 
-      const clientConn = await fastify.pg.connect();
+      const customer_id = client.stripe_customer_id;
+      if (!customer_id) {
+        return reply.status(400).send({
+          error: {message: "Stripe customer id not found", statusCode: 400},
+        });
+      }
 
       try {
-        await clientConn.query("BEGIN");
-        const client = await findClientById(fastify.pg, client_id);
-        const referralClient = await findClientById(
-          fastify.pg,
-          referral_client_id,
-        );
-
-        if (!client || !referralClient) {
-          await clientConn.query("ROLLBACK");
-          return reply.status(404).send({
-            error: {
-              message: "Client or referral client not found",
-              statusCode: 404,
-            },
-          });
-        }
-
-        const lastInvoice = await findInvoiceByType(fastify.pg, "promotion");
-        let nextNum = 1;
-        if (lastInvoice) {
-          const lastParts = lastInvoice?.invoice_name?.split("-");
-          nextNum = parseInt(lastParts[1] || "0", 10) + 1;
-        }
-        const invoiceName = `REF-${nextNum.toString().padStart(3, "0")}`;
-
-        const invoice = await createInvoice(fastify.pg, {
-          client_id,
-          invoice_name: invoiceName,
-          invoice_type: "promotion",
-          invoice_date: new Date().toISOString(),
-          plan_id: client.plan_id,
-          invoice_amount: referral_bonus,
-          invoice_status: "pending",
-          invoice_file_url: null,
+        await applyReferralCredit(customer_id, {
+          creditCents: referral_bonus * 100,
+          currency: "usd",
+          referredClientName: referralClient.client_name,
         });
-        console.log("Created invoice:", invoice.id);
 
         const referral = await createReferral(fastify.pg, {
           client_id,
           referral_client_id,
-          invoice_id: invoice.id,
+          invoice_id: null,
           referral_bonus,
         });
 
-        await clientConn.query("COMMIT");
         return reply.status(201).send({
           id: referral.id,
           referral_bonus: referral.referral_bonus,
           client_id: referral.client_id,
           referral_client_id: referral.referral_client_id,
           invoice_id: referral.invoice_id,
-          client: {
-            client_id: referral.client_id,
-            client_name: client.client_name,
-            client_category: client.client_category,
-            client_email: client.client_email,
-            client_address: client.client_address,
-            client_phone: client.client_phone,
-            timezone: client.timezone,
-            client_status: client.client_status,
-            client_referral_link: client.client_referral_link,
-          },
-          referral_client: {
-            client_id: referral.referral_client_id,
-            client_name: referralClient.client_name,
-            client_category: referralClient.client_category,
-            client_email: referralClient.client_email,
-            client_address: referralClient.client_address,
-            client_phone: referralClient.client_phone,
-            timezone: referralClient.timezone,
-            client_status: referralClient.client_status,
-            client_referral_link: referralClient.client_referral_link,
-          },
-          invoice: {
-            invoice_id: referral.invoice_id,
-            invoice_name: invoice.invoice_name,
-            invoice_type: invoice.invoice_type,
-            invoice_date: invoice.invoice_date,
-            plan_id: invoice.plan_id,
-            invoice_amount: invoice.invoice_amount,
-            invoice_status: invoice.invoice_status,
-            invoice_file_url: invoice.invoice_file_url,
-          },
+          client: formatClient(client),
+          referral_client: formatClient(referralClient),
+          invoice: {invoice_id: referral.invoice_id},
           created_at: referral.created_at,
           updated_at: referral.updated_at,
         });
       } catch (error) {
-        await clientConn.query("ROLLBACK");
-
         if (error.code === "23505") {
           return reply.status(409).send({
             error: {
@@ -213,13 +205,11 @@ async function referralRoutes(fastify) {
           });
         }
         throw error;
-      } finally {
-        clientConn.release();
       }
     },
   );
 
-  // GET /referrals — list referrals
+  // GET /referrals/client/:client_id — list referrals
   fastify.get(
     "/referrals/client/:client_id",
     {
@@ -263,66 +253,16 @@ async function referralRoutes(fastify) {
       const {referrals, total} = await listReferrals(
         fastify.pg,
         request.params.client_id,
-        {
-          limit,
-          offset,
-        },
+        {limit, offset},
       );
 
-      for (const referral of referrals) {
-        const client = await findClientById(fastify.pg, referral.client_id);
-        const referralClient = await findClientById(
-          fastify.pg,
-          referral.referral_client_id,
-        );
-        const invoice = await findInvoiceById(fastify.pg, referral.invoice_id);
-
-        console.log("Referral:", JSON.stringify(referral));
-        console.log("Client:", JSON.stringify(client));
-        console.log("Referral Client:", JSON.stringify(referralClient));
-        console.log("Invoice:", JSON.stringify(invoice));
-
-        referral.client = {
-          client_id: referral?.client_id,
-          client_name: client?.client_name,
-          client_category: client?.client_category,
-          client_email: client?.client_email,
-          client_address: client?.client_address,
-          client_phone: client?.client_phone,
-          timezone: client?.timezone,
-          client_status: client?.client_status,
-          client_referral_link: client?.client_referral_link,
-        };
-
-        referral.referral_client = {
-          client_id: referral?.referral_client_id,
-          client_name: referralClient?.client_name,
-          client_category: referralClient?.client_category,
-          client_email: referralClient?.client_email,
-          client_address: referralClient?.client_address,
-          client_phone: referralClient?.client_phone,
-          timezone: referralClient?.timezone,
-          client_status: referralClient?.client_status,
-          client_referral_link: referralClient?.client_referral_link,
-        };
-
-        referral.invoice = {
-          invoice_id: referral.invoice_id,
-          invoice_name: invoice?.invoice_name,
-          invoice_type: invoice?.invoice_type,
-          invoice_date: invoice?.invoice_date,
-          plan_id: invoice?.plan_id,
-          invoice_amount: invoice?.invoice_amount,
-          invoice_status: invoice?.invoice_status,
-          invoice_file_url: invoice?.invoice_file_url,
-        };
-      }
+      await Promise.all(referrals.map((r) => enrichReferral(fastify.pg, r)));
 
       return {referrals, total, limit, offset};
     },
   );
 
-  // GET /referrals/:id — get referral by ID
+  // GET /referrals/id/:id — get referral by ID
   fastify.get(
     "/referrals/id/:id",
     {
@@ -349,65 +289,16 @@ async function referralRoutes(fastify) {
 
       if (!referral) {
         return reply.status(404).send({
-          error: {
-            message: "Referral not found",
-            statusCode: 404,
-          },
+          error: {message: "Referral not found", statusCode: 404},
         });
       }
 
-      const client = await findClientById(fastify.pg, referral.client_id);
-      const referralClient = await findClientById(
-        fastify.pg,
-        referral.referral_client_id,
-      );
-      const invoice = await findInvoiceById(fastify.pg, referral.invoice_id);
-
-      console.log("Referral:", JSON.stringify(referral));
-      console.log("Client:", JSON.stringify(client));
-      console.log("Referral Client:", JSON.stringify(referralClient));
-      console.log("Invoice:", JSON.stringify(invoice));
-
-      referral.client = {
-        client_id: referral?.client_id,
-        client_name: client?.client_name,
-        client_category: client?.client_category,
-        client_email: client?.client_email,
-        client_address: client?.client_address,
-        client_phone: client?.client_phone,
-        timezone: client?.timezone,
-        client_status: client?.client_status,
-        client_referral_link: client?.client_referral_link,
-      };
-
-      referral.referral_client = {
-        client_id: referral?.referral_client_id,
-        client_name: referralClient?.client_name,
-        client_category: referralClient?.client_category,
-        client_email: referralClient?.client_email,
-        client_address: referralClient?.client_address,
-        client_phone: referralClient?.client_phone,
-        timezone: referralClient?.timezone,
-        client_status: referralClient?.client_status,
-        client_referral_link: referralClient?.client_referral_link,
-      };
-
-      referral.invoice = {
-        invoice_id: referral.invoice_id,
-        invoice_name: invoice?.invoice_name,
-        invoice_type: invoice?.invoice_type,
-        invoice_date: invoice?.invoice_date,
-        plan_id: invoice?.plan_id,
-        invoice_amount: invoice?.invoice_amount,
-        invoice_status: invoice?.invoice_status,
-        invoice_file_url: invoice?.invoice_file_url,
-      };
-
+      await enrichReferral(fastify.pg, referral);
       return referral;
     },
   );
 
-  // PUT /referrals/:id — update referral
+  // PUT /referrals/id/:id — update referral bonus
   fastify.put(
     "/referrals/id/:id",
     {
@@ -438,26 +329,40 @@ async function referralRoutes(fastify) {
       },
     },
     async (request, reply) => {
-      const referral = await updateReferral(
-        fastify.pg,
-        request.params.id,
-        request.body,
-      );
+      const {amount} = request.body;
+      const referral = await findReferralById(fastify.pg, request.params.id);
 
       if (!referral) {
         return reply.status(404).send({
-          error: {
-            message: "Referral not found",
-            statusCode: 404,
-          },
+          error: {message: "Referral not found", statusCode: 404},
         });
       }
 
-      return referral;
+      const client = await findClientById(fastify.pg, referral.client_id);
+      const customer_id = client?.stripe_customer_id;
+      if (!customer_id) {
+        return reply.status(400).send({
+          error: {message: "Stripe customer id not found", statusCode: 400},
+        });
+      }
+
+      await updateReferralCredit(customer_id, {
+        previousCreditCents: referral.referral_bonus * 100,
+        newCreditCents: amount * 100,
+        currency: "usd",
+      });
+
+      const updatedReferral = await updateReferral(
+        fastify.pg,
+        referral.id,
+        amount,
+      );
+
+      return updatedReferral;
     },
   );
 
-  // DELETE /referrals/:id — delete referral
+  // DELETE /referrals/id/:id — delete referral
   fastify.delete(
     "/referrals/id/:id",
     {
@@ -484,10 +389,7 @@ async function referralRoutes(fastify) {
 
       if (!deleted) {
         return reply.status(404).send({
-          error: {
-            message: "Referral not found",
-            statusCode: 404,
-          },
+          error: {message: "Referral not found", statusCode: 404},
         });
       }
 

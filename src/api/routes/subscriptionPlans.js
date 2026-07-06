@@ -1,4 +1,6 @@
 // User CRUD routes
+const {SESv2Client, SendEmailCommand} = require("@aws-sdk/client-sesv2");
+const nodemailer = require("nodemailer");
 const {
   createSubscriptionPlan,
   findPlanById,
@@ -9,6 +11,78 @@ const {
 } = require("../repositories/subscriptionPlanRepository");
 const {createCredential} = require("../repositories/credentialRepository");
 const {hashPassword, checkPasswordStrength} = require("../utils/password");
+
+const region = process.env.REGION;
+const ses = new SESv2Client({region});
+const transporter = nodemailer.createTransport({
+  SES: {ses, aws: {SendEmailCommand}},
+});
+
+const email_from_name = "PBXScribe Support";
+
+const renderRow = (label, value) => `
+  <tr>
+    <td style="padding-top: 15px;">
+      <p style="margin:0; font-family: sans-serif; font-size: 12px; color: #008AA2; letter-spacing: 1px;">${label}</p>
+      <p style="margin:5px 0 0 0; font-family: sans-serif; font-size: 16px; font-weight: 600; color: #3A3C47;">${value}</p>
+      <div style="border-bottom: 1px dashed #50A2B0; padding-top: 10px;"></div>
+    </td>
+  </tr>
+`;
+
+const generateCustomPlanHtml = ({name, email, phone, organization_name}) => `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style type="text/css">
+      body { height: 100% !important; margin: 0 auto !important; padding: 0 !important; width: 100% !important }
+      @media screen and (max-width: 600px) { .wMobile { width: 100% !important; } }
+    </style>
+  </head>
+  <body bgcolor="#d6d6d6" style="background-color: #d6d6d6">
+    <table border="0" cellpadding="0" cellspacing="0" style="width: 100%">
+      <tr>
+        <td align="center">
+          <table border="0" cellpadding="0" cellspacing="0" class="wMobile" style="width: 600px; background-color: #ffffff;">
+            <tr>
+              <td align="center" style="padding: 30px 0;">
+                <img src="https://mcusercontent.com/d603034a289f62a1c39e7ae49/images/5eba9c76-ba53-96ad-15eb-73d5b91ee5c8.png" width="190" alt="Logo">
+              </td>
+            </tr>
+            <tr>
+              <td bgcolor="#0B263B" style="padding: 10px 30px;">
+                <div style="font-family: sans-serif; font-size: 18px; color: #FFFFFF; font-weight: 700;">Custom Plan Request</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 20px 30px; font-family: sans-serif; font-size: 16px; color: #3A3C47; line-height: 26px;">
+                A new custom plan inquiry has been submitted.
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 0 30px 30px 30px;">
+                <table width="100%" bgcolor="#F1FBF7" style="border-radius: 20px; padding: 20px;">
+                  ${renderRow("NAME", name)}
+                  ${renderRow("EMAIL", email)}
+                  ${renderRow("PHONE", phone)}
+                  ${renderRow("ORGANIZATION", organization_name)}
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td bgcolor="#f7f7f7" align="center" style="padding: 10px 0;">
+                <a href="http://www.dtsit.com/" style="font-family: sans-serif; font-size: 14px; color: #3A3C47; text-decoration: none;">Digicom Technology Solutions | Your Success. Our Passion.</a>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+  </html>
+`;
 
 const subscriptionPlanSchema = {
   type: "object",
@@ -33,6 +107,54 @@ const subscriptionPlanSchema = {
  * @param {FastifyInstance} fastify - Fastify instance
  */
 async function subscriptionPlanRoutes(fastify) {
+  // POST /custom-plan — custom plan inquiry (public)
+  fastify.post(
+    "/custom-plan",
+    {
+      preHandler: [fastify.authenticate],
+      schema: {
+        tags: ["Subscription Plans"],
+        summary: "Request a custom plan",
+        description:
+          "Submits a custom plan inquiry. Sends a notification email to the support team.",
+        security: [{bearerAuth: []}, {apiKeyAuth: []}],
+        body: {
+          type: "object",
+          required: ["name", "email", "phone", "organization_name"],
+          properties: {
+            name: {type: "string", minLength: 1, maxLength: 255},
+            email: {type: "string", format: "email"},
+            phone: {type: "string", minLength: 7, maxLength: 20},
+            organization_name: {type: "string", minLength: 1, maxLength: 255},
+          },
+          additionalProperties: false,
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              message: {type: "string"},
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const {name, email, phone, organization_name} = request.body;
+
+      const info = await transporter.sendMail({
+        from: `${email_from_name} <${process.env.DEFAULT_SUPPORT_TO_EMAIL}>`,
+        to: process.env.TEST_EMAIL,
+        subject: `Custom Plan Request from ${organization_name}`,
+        html: generateCustomPlanHtml({name, email, phone, organization_name}),
+      });
+
+      console.log(`Custom plan inquiry email sent: ${info.messageId}`);
+
+      return {message: "Your custom plan request has been received. We will be in touch shortly."};
+    },
+  );
+
   // POST /subscription-plans — create subscription plan
   fastify.post(
     "/subscription-plans",

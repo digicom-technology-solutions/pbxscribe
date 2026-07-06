@@ -1,0 +1,77 @@
+name: Deploy PBXScribe API
+
+on:
+  push:
+    branches:
+      - main
+      - "feature/*"
+
+permissions:
+  id-token: write  # required for OIDC
+  contents: read
+
+env:
+  AWS_REGION: us-east-2
+  NODE_VERSION: "20"
+
+jobs:
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+  deploy-dev:
+    name: Deploy → Dev
+    needs: build
+    if: github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::920394711520:role/pbxscribe-api-backend-dev-github-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy Lambda functions to dev
+        run: bash deploy.sh dev --code-only
+
+  deploy-prod:
+    name: Deploy → Prod
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::920394711520:role/pbxscribe-api-backend-prod-github-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy Lambda functions to prod
+        run: bash deploy.sh prod --code-only

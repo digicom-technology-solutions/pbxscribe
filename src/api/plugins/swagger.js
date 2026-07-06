@@ -35,6 +35,10 @@ async function swaggerPlugin(fastify) {
           description: "Logs CRUD operations",
         },
         {
+          name: "Unprocessed Logs",
+          description: "Unprocessed logs CRUD operations",
+        },
+        {
           name: "Invoices",
           description: "Invoices CRUD operations",
         },

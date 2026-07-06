@@ -1,4 +1,70 @@
 // Auth routes
+const {SESv2Client, SendEmailCommand} = require("@aws-sdk/client-sesv2");
+const nodemailer = require("nodemailer");
+
+const ses = new SESv2Client({region: process.env.REGION});
+const transporter = nodemailer.createTransport({
+  SES: {ses, aws: {SendEmailCommand}},
+});
+
+const generatePasswordResetHtml = (firstname, resetUrl) => `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style type="text/css">
+      body { height: 100% !important; margin: 0 auto !important; padding: 0 !important; width: 100% !important; }
+      @media screen and (max-width: 600px) { .wMobile { width: 100% !important; } }
+    </style>
+  </head>
+  <body bgcolor="#d6d6d6" style="background-color: #d6d6d6;">
+    <table border="0" cellpadding="0" cellspacing="0" style="width: 100%;">
+      <tr>
+        <td align="center">
+          <table border="0" cellpadding="0" cellspacing="0" class="wMobile" style="width: 600px; background-color: #ffffff;">
+            <tr>
+              <td align="center" style="padding: 30px 0;">
+                <img src="https://mcusercontent.com/d603034a289f62a1c39e7ae49/images/5eba9c76-ba53-96ad-15eb-73d5b91ee5c8.png" width="190" alt="PBXScribe">
+              </td>
+            </tr>
+            <tr>
+              <td bgcolor="#0B263B" style="padding: 10px 30px;">
+                <div style="font-family: sans-serif; font-size: 18px; color: #FFFFFF; font-weight: 700;">Password Reset Request</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 30px 30px 10px 30px; font-family: sans-serif; font-size: 16px; color: #3A3C47; line-height: 26px;">
+                Hi ${firstname},<br><br>
+                We received a request to reset your PBXScribe password. Click the button below to choose a new one. This link expires in <strong>1 hour</strong>.
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding: 30px;">
+                <a href="${resetUrl}" style="display: inline-block; background-color: #008AA2; color: #FFFFFF; font-family: sans-serif; font-size: 16px; font-weight: 700; text-decoration: none; padding: 14px 36px; border-radius: 6px;">Reset Password</a>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 0 30px 30px 30px; font-family: sans-serif; font-size: 14px; color: #3A3C47; line-height: 22px;">
+                If the button doesn't work, copy and paste this link into your browser:<br>
+                <a href="${resetUrl}" style="color: #008AA2; word-break: break-all;">${resetUrl}</a>
+                <br><br>
+                If you didn't request a password reset, you can safely ignore this email. Your password will not change.
+              </td>
+            </tr>
+            <tr>
+              <td bgcolor="#f7f7f7" align="center" style="padding: 10px 0;">
+                <a href="http://www.dtsit.com/" style="font-family: sans-serif; font-size: 14px; color: #3A3C47; text-decoration: none;">Digicom Technology Solutions | Your Success. Our Passion.</a>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+  </html>
+`;
+
 const {
   createUser,
   findUserByEmail,
@@ -77,7 +143,7 @@ async function authRoutes(fastify) {
                   },
                   user_role: {
                     type: "string",
-                    enum: ["viewer", "manager", "admin"],
+                    enum: ["owner", "admin"],
                   },
                   two_fa_enabled: {type: "boolean"},
                   created_at: {type: "string", format: "date-time"},
@@ -116,6 +182,7 @@ async function authRoutes(fastify) {
     },
     async (request, reply) => {
       const {client_id, email, firstname, lastname, password} = request.body;
+      let {user_role} = request.body;
 
       const {valid, failures} = checkPasswordStrength(password);
       if (!valid) {
@@ -265,10 +332,14 @@ async function authRoutes(fastify) {
           "SELECT credential_hash FROM user_credentials WHERE id = $1",
           [cred.id],
         );
-        if (
-          row.rows.length &&
-          (await verifyPassword(password, row.rows[0].credential_hash))
-        ) {
+        console.log(
+          `Checking password for credential ID ${cred.id}:`,
+          row.rows[0],
+        );
+        const match = row.rows.length
+          ? await verifyPassword(password, row.rows[0].credential_hash)
+          : false;
+        if (match) {
           matchedCredential = cred;
           break;
         }
@@ -280,14 +351,11 @@ async function authRoutes(fastify) {
 
       updateLastUsed(fastify.pg, matchedCredential.id).catch(() => {});
 
-      let token = null;
-      if (user.user_type === "api") {
-        token = generateToken({
-          sub: user.id,
-          email: user.email,
-          name: `${user.firstname} ${user.lastname}`,
-        });
-      }
+      const token = generateToken({
+        sub: user.id,
+        email: user.email,
+        name: `${user.firstname} ${user.lastname}`,
+      });
       return {token, user};
     },
   );
@@ -600,8 +668,6 @@ async function authRoutes(fastify) {
         return reply.status(401).send(genericError);
       }
 
-      console.log("User requested password reset:", user);
-
       const token = generateToken({
         sub: user.id,
         email: user.email,
@@ -619,6 +685,15 @@ async function authRoutes(fastify) {
         expires_at: expiresAt,
         created_at: createdAt,
       });
+
+      const resetUrl = `https://${process.env.PBXSCRIBE_DOMAIN}/reset-password?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
+      const info = await transporter.sendMail({
+        from: `PBXScribe Support <${process.env.DEFAULT_SUPPORT_TO_EMAIL}>`,
+        to: email,
+        subject: "Reset your PBXScribe password",
+        html: generatePasswordResetHtml(user.firstname, resetUrl),
+      });
+      console.log(`Password reset email sent: ${info.messageId}`);
 
       return {
         token,
@@ -699,35 +774,17 @@ async function authRoutes(fastify) {
         return reply.status(401).send(genericError);
       }
 
-      console.log("User requested password reset:", request_token);
-
       const credentials = await findCredentialsByUserId(
         fastify.pg,
         request_token.user_id,
         "password",
       );
       const active = credentials.filter((c) => c.is_active);
-
-      let matchedCredential = null;
-      for (const cred of active) {
-        const row = await fastify.pg.query(
-          "SELECT credential_hash FROM user_credentials WHERE id = $1",
-          [cred.id],
-        );
-        if (
-          row.rows.length &&
-          (await verifyPassword(new_password, row.rows[0].credential_hash))
-        ) {
-          matchedCredential = cred;
-          break;
-        }
-      }
+      const matchedCredential = active[0] ?? null;
 
       if (!matchedCredential) {
         return reply.status(401).send(genericError);
       }
-
-      console.log("Matched credential for password reset:", matchedCredential);
 
       deactivateCredential(fastify.pg, matchedCredential.id).catch(() => {});
 
@@ -738,16 +795,97 @@ async function authRoutes(fastify) {
         credentialHash: hash,
         label: "password",
       });
-
       await deleteToken(fastify.pg, {
         token: request_token.token,
       });
-
       return {
         user: {
           id: request_token.id,
           client_id: request_token.client_id,
           email: request_token.email,
+        },
+      };
+    },
+  );
+
+  // POST /auth/set-password — protected
+  fastify.post(
+    "/auth/set-password",
+    {
+      schema: {
+        tags: ["Auth"],
+        summary: "Set password",
+        description: "Allows a user to set their password.",
+        security: [{bearerAuth: []}, {apiKeyAuth: []}],
+        body: {
+          type: "object",
+          required: ["email", "token", "new_password"],
+          properties: {
+            email: {type: "string", format: "email"},
+            token: {type: "string"},
+            new_password: {type: "string", minLength: 8, maxLength: 255},
+          },
+          additionalProperties: false,
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              token: {type: "string", description: "JWT bearer token"},
+              user: {
+                type: "object",
+                properties: {
+                  id: {type: "integer"},
+                  client_id: {type: "integer"},
+                  email: {type: "string", format: "email"},
+                  token: {type: "boolean"},
+                  expires_at: {type: "string", format: "date-time"},
+                  created_at: {type: "string", format: "date-time"},
+                },
+              },
+            },
+          },
+          401: {
+            type: "object",
+            properties: {
+              error: {
+                type: "object",
+                properties: {
+                  message: {type: "string"},
+                  statusCode: {type: "integer"},
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const {email, token, new_password} = request.body;
+      const genericError = {
+        error: {
+          message: "User does not exist",
+          statusCode: 404,
+        },
+      };
+
+      const user = await findUserByEmail(fastify.pg, email);
+      if (!user || user.user_status !== "enabled") {
+        return reply.status(401).send(genericError);
+      }
+
+      const hash = await hashPassword(new_password);
+      await createCredential(fastify.pg, {
+        userId: user.id,
+        credentialType: "password",
+        credentialHash: hash,
+        label: "password",
+      });
+      return {
+        user: {
+          id: user.id,
+          client_id: user.client_id,
+          email: user.email,
         },
       };
     },

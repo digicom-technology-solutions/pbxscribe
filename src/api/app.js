@@ -20,6 +20,7 @@ const ticketMessageRoutes = require("./routes/ticketMessages");
 const authRoutes = require("./routes/auth");
 const apiKeyRoutes = require("./routes/apiKeys");
 const whitelistedIpsRoutes = require("./routes/whitelistedIps");
+const unprocessedLogsRoutes = require("./routes/unprocessedLogs");
 
 /**
  * Initialize and configure Fastify application
@@ -91,6 +92,7 @@ async function init() {
       await fastify.register(supportTicketRoutes);
       await fastify.register(ticketMessageRoutes);
       await fastify.register(whitelistedIpsRoutes);
+      await fastify.register(unprocessedLogsRoutes);
       // Root route
       fastify.get(
         "/",

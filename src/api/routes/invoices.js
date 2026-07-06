@@ -177,7 +177,7 @@ async function invoiceRoutes(fastify) {
         params: {
           type: "object",
           properties: {
-            id: {type: "integer"},
+            id: {type: "string"},
           },
           required: ["id"],
         },
@@ -187,7 +187,7 @@ async function invoiceRoutes(fastify) {
       },
     },
     async (request, reply) => {
-      const invoice = await findInvoiceById(fastify.pg, request.params.id);
+      const invoice = await findInvoiceById(request.params.id);
 
       if (!invoice) {
         return reply.status(404).send({

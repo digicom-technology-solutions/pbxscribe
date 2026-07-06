@@ -1,0 +1,101 @@
+Parameters:
+  ProjectName:
+    Type: String
+    Default: pbxscribe-admin-ui
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9-]*"
+    Description: Enter the name of project (Only Alphanumberic)
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+    Description: Enter the deployment environment of resources ( dev, staging, prod)
+
+Resources:
+  ######################################################
+  #           S3                                       #
+  ######################################################
+  AdminUIS3Storage:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - BucketKeyEnabled: true
+            ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      BucketName: !Sub ${ProjectName}-${Environment}-admin-ui
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  AdminUIS3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    DependsOn:
+      - CloudFrontOriginAccessControl
+    Properties:
+      Bucket: !Ref AdminUIS3Storage
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: "cloudfront.amazonaws.com"
+            Action: "s3:GetObject"
+            Resource: !Sub ${AdminUIS3Storage.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudfrontDistribution}"
+
+  ######################################################
+  #           Cloudfront                               #
+  ######################################################
+  CloudFrontOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Description: Origin Access Control(OAC) for allowing cloudfront to access S3 bucket
+        Name: !Sub ${ProjectName}-${Environment}-video-tracker-app-oac
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  CloudfrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: This distribution is used to host pbxscribe admin UI
+        Enabled: true
+        DefaultRootObject: index.html
+        CustomErrorResponses:
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+        HttpVersion: http2
+        IPV6Enabled: false
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          TargetOriginId: !Ref AdminUIS3Storage
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          ViewerProtocolPolicy: redirect-to-https
+        PriceClass: PriceClass_All
+        Origins:
+          - DomainName: !GetAtt AdminUIS3Storage.RegionalDomainName
+            Id: !Ref AdminUIS3Storage
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+            OriginAccessControlId: !GetAtt CloudFrontOriginAccessControl.Id

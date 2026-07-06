@@ -1,5 +1,5 @@
 // User CRUD routes
-const sesClientModule = require("@aws-sdk/client-ses");
+const {SESv2Client, SendEmailCommand} = require("@aws-sdk/client-sesv2");
 const nodemailer = require("nodemailer");
 const {
   S3Client,
@@ -20,11 +20,11 @@ const {
 } = require("../repositories/supportTicketRepository");
 
 const region = process.env.REGION;
-const ses = new sesClientModule.SESClient({
+const ses = new SESv2Client({
   region,
 });
 const transporter = nodemailer.createTransport({
-  SES: {ses, aws: sesClientModule},
+  SES: {ses, aws: {SendEmailCommand}},
 });
 const s3Client = new S3Client({
   region,

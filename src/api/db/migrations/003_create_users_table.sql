@@ -14,7 +14,7 @@ CREATE TABLE users (
   user_status VARCHAR(20) NOT NULL DEFAULT 'enabled',
     CHECK (user_status IN ('enabled', 'disabled')),
   user_role VARCHAR(20) NOT NULL DEFAULT 'viewer',
-    CHECK (user_role IN ('viewer', 'manager', 'admin')),
+    CHECK (user_role IN ('viewer', 'manager', 'admin', 'superadmin', 'developer', 'support', 'owner')),
   two_fa_enabled BOOLEAN NOT NULL DEFAULT false,
   two_fa_secret VARCHAR(255),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

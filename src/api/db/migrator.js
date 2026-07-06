@@ -16,6 +16,15 @@ async function ensureMigrationsTable(client) {
       applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  // Re-sync the sequence with the actual max id to prevent duplicate PK errors
+  // after snapshot restores, partial rollbacks, or other out-of-band DB operations.
+  await client.query(`
+    SELECT setval(
+      pg_get_serial_sequence('schema_migrations', 'id'),
+      COALESCE(MAX(id), 0),
+      true
+    ) FROM schema_migrations
+  `);
 }
 
 /**
@@ -101,6 +110,7 @@ async function dropAllTables(client) {
 	DROP TABLE IF EXISTS invoices CASCADE;
 	DROP TABLE IF EXISTS reset_password CASCADE;
 	DROP TABLE IF EXISTS phone_numbers CASCADE;
+	DROP TABLE IF EXISTS unprocessed_logs CASCADE;
 	DROP TABLE IF EXISTS logs CASCADE;
 	DROP TABLE IF EXISTS payment_methods CASCADE;
     DROP TABLE IF EXISTS user_credentials CASCADE;
@@ -108,7 +118,7 @@ async function dropAllTables(client) {
 	DROP TABLE IF EXISTS clients CASCADE;
 	DROP TABLE IF EXISTS subscription_plans CASCADE;
   `);
-  await client.query("DELETE FROM schema_migrations");
+  await client.query("TRUNCATE schema_migrations RESTART IDENTITY");
   console.log("All tables dropped and migration history cleared");
 }
 

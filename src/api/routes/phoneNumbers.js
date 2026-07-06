@@ -69,7 +69,7 @@ async function twilioRoutes(fastify) {
           type: "object",
           required: ["country_code"],
           properties: {
-            country_code: {type: "string", minLength: 2, maxLength: 2},
+            country_code: {type: "string", enum: ["US"]},
             search_type: {
               type: "string",
               enum: ["number", "locality"],
@@ -96,6 +96,7 @@ async function twilioRoutes(fastify) {
                 },
                 friendly_name: {type: "string"},
                 phone_type: {type: "string"},
+                monthly_price: {type: "string"},
               },
             },
           },
@@ -339,6 +340,15 @@ async function twilioRoutes(fastify) {
         });
       }
 
+      if (!phone_number.greetings_file_name) {
+        return reply.status(404).send({
+          error: {
+            message: "Greetings file not found",
+            statusCode: 404,
+          },
+        });
+      }
+
       try {
         const command = new GetObjectCommand({
           Bucket: process.env.GREETINGS_S3_BUCKET,
@@ -428,9 +438,17 @@ async function twilioRoutes(fastify) {
         });
       }
 
+      console.log(
+        `Phone number found for greetings update: ${JSON.stringify(phone_number)}`,
+      );
+
       const formatted_client_name = client.client_name
         .replace(/\s+/g, "_")
         .toLowerCase();
+      const formatted_phone_number = phone_number.phone_number.replace(
+        "+1",
+        "",
+      );
 
       try {
         const greetings_upload = await addGreetingsFile({
@@ -443,7 +461,7 @@ async function twilioRoutes(fastify) {
 
         const command = new PutObjectCommand({
           Bucket: process.env.GREETINGS_S3_BUCKET,
-          Key: `${formatted_client_name}.mp3`,
+          Key: `${formatted_phone_number}.mp3`,
           ContentType: "audio/mpeg",
         });
         const greetings_upload_url = await getSignedUrl(s3Client, command, {
@@ -455,7 +473,7 @@ async function twilioRoutes(fastify) {
         const phoneNumber = await updatePhoneNumber(
           fastify.pg,
           request.params.id,
-          {greetings_file_name: `${formatted_client_name}.mp3`},
+          {greetings_file_name: `${formatted_phone_number}.mp3`},
         );
 
         return reply.status(201).send({

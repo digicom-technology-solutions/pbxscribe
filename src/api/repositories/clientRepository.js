@@ -98,6 +98,22 @@ async function findClientByEmail(pool, email) {
 }
 
 /**
+ * Find a client by name (case-insensitive)
+ * @param {Pool} pool
+ * @param {string} name
+ * @returns {Promise<Object|null>}
+ */
+async function findClientByName(pool, name) {
+  const result = await pool.query(
+    `SELECT id, client_name, plan_id, client_category, client_email, client_address, client_phone, timezone, client_status, client_referral_link, pbx_tag_format, tls_encryption_enabled, delivery_failure_notification, usage_alert_notification, system_alert_notification, stripe_customer_id, stripe_subscription_id, created_at, updated_at
+     FROM clients
+     WHERE LOWER(client_name) = LOWER($1)`,
+    [name],
+  );
+  return result.rows[0] || null;
+}
+
+/**
  * Find a client by referral link
  * @param {Pool} pool
  * @param {string} referralLink
@@ -232,6 +248,7 @@ module.exports = {
   createClient,
   findClientById,
   findClientByEmail,
+  findClientByName,
   updateClient,
   listClients,
   deleteClient,

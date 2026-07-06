@@ -197,6 +197,7 @@ if $RUN_CODE; then
 
   LAMBDA_CONFIGS=(
     "src/api:$LAMBDA_FUNCTION:api_deploy.zip"
+    "src/parser:$PARSER_LAMBDA_FUNCTION:parser_deploy.zip"
   )
 
   for CONFIG in "${LAMBDA_CONFIGS[@]}"; do

@@ -3,7 +3,7 @@
 /**
  * Create a new referral
  * @param {Pool} pool - pg.Pool instance
- * @param {{ client_id: number, invoice_id: number, referral_bonus: number }} fields
+ * @param {{ client_id: number, invoice_id?: string, referral_bonus: number }} fields
  * @returns {Promise<Object>} Created referral row
  */
 async function createReferral(
@@ -39,11 +39,11 @@ async function findReferralById(pool, id) {
  * Update a referral (partial updates supported)
  * @param {Pool} pool
  * @param {string} id - UUID
- * @param {{ client_id?: number, referral_client_id?: number, invoice_id?: number, referral_bonus?: number }} fields - Fields to update
+ * @param {{ client_id?: number, referral_client_id?: number, invoice_id?: string, referral_bonus?: number }} fields - Fields to update
  * @returns {Promise<Object|null>} Updated referral row, or null if not found
  */
 async function updateReferral(pool, id, fields) {
-  const allowed = ["referral_client_id", "invoice_id", "referral_bonus"];
+  const allowed = ["referral_bonus"];
   const updates = [];
   const values = [];
 

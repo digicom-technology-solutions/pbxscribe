@@ -1,5 +1,5 @@
 const twilio = require("twilio");
-const {SESClient, SendEmailCommand} = require("@aws-sdk/client-ses");
+const {SESv2Client, SendEmailCommand} = require("@aws-sdk/client-sesv2");
 const {authenticator} = require("otplib");
 const QRCode = require("qrcode");
 
@@ -21,7 +21,7 @@ function getTwilioClient() {
 
 const getSESClient = () => {
   if (!sesClient) {
-    sesClient = new SESClient({region: process.env.AWS_REGION || "us-east-1"});
+    sesClient = new SESv2Client({region: process.env.AWS_REGION || "us-east-1"});
   }
   return sesClient;
 };

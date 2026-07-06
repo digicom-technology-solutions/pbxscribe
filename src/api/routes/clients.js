@@ -4,6 +4,7 @@ const {
   createClient,
   findClientById,
   findClientByEmail,
+  findClientByName,
   updateClient,
   listClients,
   deleteClient,
@@ -227,13 +228,11 @@ async function clientRoutes(fastify) {
   fastify.get(
     "/clients",
     {
-      preHandler: [fastify.authenticate],
       schema: {
         tags: ["Clients"],
         summary: "List clients",
         description:
           "Returns a paginated list of clients, optionally filtered by status.",
-        security: [{bearerAuth: []}, {apiKeyAuth: []}],
         querystring: {
           type: "object",
           properties: {
@@ -279,12 +278,10 @@ async function clientRoutes(fastify) {
   fastify.get(
     "/clients/id/:id",
     {
-      preHandler: [fastify.authenticate],
       schema: {
         tags: ["Clients"],
         summary: "Get a client",
         description: "Returns a single client by UUID.",
-        security: [{bearerAuth: []}, {apiKeyAuth: []}],
         params: {
           type: "object",
           properties: {
@@ -298,6 +295,43 @@ async function clientRoutes(fastify) {
     },
     async (request, reply) => {
       const client = await findClientById(fastify.pg, request.params.id);
+
+      if (!client) {
+        return reply.status(404).send({
+          error: {
+            message: "Client not found",
+            statusCode: 404,
+          },
+        });
+      }
+
+      client.subscription_plan = await findPlanById(fastify.pg, client.plan_id);
+
+      return client;
+    },
+  );
+
+  // GET /clients/name/:name — get client by name
+  fastify.get(
+    "/clients/name/:name",
+    {
+      schema: {
+        tags: ["Clients"],
+        summary: "Get a client by name",
+        description: "Returns a single client by name (case-insensitive).",
+        params: {
+          type: "object",
+          properties: {
+            name: {type: "string"},
+          },
+        },
+        response: {
+          200: clientSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const client = await findClientByName(fastify.pg, request.params.name);
 
       if (!client) {
         return reply.status(404).send({
