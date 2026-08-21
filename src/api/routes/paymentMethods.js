@@ -36,6 +36,30 @@ async function getClientWithStripeId(fastify, client_id, reply) {
   return client;
 }
 
+async function setAsDefaultPaymentMethod(client, stripe_pm_id) {
+  await getStripe().customers.update(client.stripe_customer_id, {
+    invoice_settings: {default_payment_method: stripe_pm_id},
+  });
+  if (client.stripe_subscription_id) {
+    await getStripe().subscriptions.update(client.stripe_subscription_id, {
+      default_payment_method: stripe_pm_id,
+    });
+  }
+}
+
+function serializePaymentMethod(pm, is_default) {
+  return {
+    id: pm.id,
+    type: pm.type,
+    brand: pm.card?.brand || null,
+    last4: pm.card?.last4 || null,
+    exp_month: pm.card?.exp_month || null,
+    exp_year: pm.card?.exp_year || null,
+    cardholder_name: pm.billing_details?.name || null,
+    is_default,
+  };
+}
+
 async function paymentMethodRoutes(fastify) {
   // POST /payment-methods/attach
   fastify.post(
@@ -89,26 +113,10 @@ async function paymentMethodRoutes(fastify) {
       }
 
       if (is_default) {
-        await getStripe().customers.update(client.stripe_customer_id, {
-          invoice_settings: {default_payment_method: stripe_payment_method_id},
-        });
-        if (client.stripe_subscription_id) {
-          await getStripe().subscriptions.update(client.stripe_subscription_id, {
-            default_payment_method: stripe_payment_method_id,
-          });
-        }
+        await setAsDefaultPaymentMethod(client, stripe_payment_method_id);
       }
 
-      return {
-        id: pm.id,
-        type: pm.type,
-        brand: pm.card?.brand || null,
-        last4: pm.card?.last4 || null,
-        exp_month: pm.card?.exp_month || null,
-        exp_year: pm.card?.exp_year || null,
-        cardholder_name: pm.billing_details?.name || null,
-        is_default,
-      };
+      return serializePaymentMethod(pm, is_default);
     },
   );
 
@@ -214,15 +222,7 @@ async function paymentMethodRoutes(fastify) {
       const client = await getClientWithStripeId(fastify, client_id, reply);
       if (!client) return;
 
-      await getStripe().customers.update(client.stripe_customer_id, {
-        invoice_settings: {default_payment_method: stripe_pm_id},
-      });
-
-      if (client.stripe_subscription_id) {
-        await getStripe().subscriptions.update(client.stripe_subscription_id, {
-          default_payment_method: stripe_pm_id,
-        });
-      }
+      await setAsDefaultPaymentMethod(client, stripe_pm_id);
 
       return {success: true};
     },

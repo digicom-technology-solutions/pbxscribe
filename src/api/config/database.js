@@ -52,14 +52,13 @@ async function getDbCredentials() {
 async function getDatabaseConfig() {
   const credentials = await getDbCredentials();
 
-  const isProduction = process.env.NODE_ENV === 'production';
   const config = {
     host: process.env.DB_HOST,
     port: parseInt(process.env.DB_PORT || '5432', 10),
     database: process.env.DB_NAME,
     user: credentials.username,
     password: credentials.password,
-    ssl: isProduction ? { rejectUnauthorized: true } : false,
+    ssl: { rejectUnauthorized: true },
     // Connection pool settings
     max: 10, // Maximum number of clients in the pool
     idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
